@@ -9,12 +9,14 @@ contract Crowdsale is Ownable {
 
   EnjoyLifeCoinToken public token = new EnjoyLifeCoinToken();
 
+  enum DistributionStages { initial, minCapMet, threeMillions, fiveMillions, sevenMillions, finishes }
+  DistributionStages public currentStage = DistributionStages.initial;
+
   address feeAccount;         // 0xdA39e0Ce2adf93129D04F53176c7Bfaaae8B051a
   address bountyAccount;      // 0x0064952457905eBFB9c0292200A74B1d7414F081
   address projectTeamAccount; // 0x980F0A3fEDc9D5236C787A827ab7c2276227D78d
   address otherAccount;       // 0x3433974240b95bafc8705074c0859cee92a562f8
 
-  mapping(address => uint) public balancesPreICO;
   mapping(address => uint) public balancesICO;
 
   uint public startPreICO; // 01.11.2017 12:00 UTC+2 --> 1509530400
@@ -79,13 +81,46 @@ contract Crowdsale is Ownable {
       } else if (tokensWithBonus > remainderTokens) {
         tokensWithBonus = remainderTokens;
       }
-
       tokensCountPreICO = tokensCountPreICO.add(tokensWithBonus);
-      balancesPreICO[msg.sender] = balancesPreICO[msg.sender].add(totalValue);
-
       token.transfer(msg.sender, tokensWithBonus);
+
+      // Distribute funds
+      uint projectTeamValue = msg.value.mul(95).div(100);
+      uint feeValue = msg.value.sub(projectTeamValue);
+      projectTeamAccount.transfer(projectTeamValue);       // 95%
+      feeAccount.transfer(feeValue);                       // 5%
+      TransferWei(projectTeamAccount, projectTeamValue);
+      TransferWei(feeAccount, feeValue);
     } else {
       revert();
+    }
+  }
+
+  function distribute() internal {
+    uint total = this.balance;
+    uint otherValue = total >> 2;                                 // 50%
+    uint feeValue = total.div(20);                                // 5%
+    uint projectTeamValue = total.sub(otherValue).sub(feeValue);  // 45%
+    feeAccount.transfer(feeValue);
+    projectTeamAccount.transfer(projectTeamValue);
+    otherAccount.transfer(otherValue);
+    TransferWei(feeAccount, feeValue);
+    TransferWei(projectTeamAccount, projectTeamValue);
+    TransferWei(otherAccount, otherValue);
+  }
+
+  function ethDistribution() internal {
+    uint total = tokensCountPreICO + tokensCountICO;
+    if (currentStage == DistributionStages.initial && total >= minCapICO) {
+      currentStage = DistributionStages.minCapMet; distribute();
+    } else if (currentStage == DistributionStages.minCapMet && total >= 300000000) {
+      currentStage = DistributionStages.threeMillions; distribute();
+    } else if (currentStage == DistributionStages.threeMillions && total >= 500000000) {
+      currentStage = DistributionStages.fiveMillions; distribute();
+    } else if (currentStage == DistributionStages.fiveMillions && total >= 700000000) {
+      currentStage = DistributionStages.sevenMillions; distribute();
+    } else if (currentStage == DistributionStages.sevenMillions && total == token.INITIAL_SUPPLY()) {
+      currentStage = DistributionStages.finishes; distribute();
     }
   }
 

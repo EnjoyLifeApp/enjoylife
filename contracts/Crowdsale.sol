@@ -7,6 +7,8 @@ import "./EnjoyLifeCoinToken.sol";
 contract Crowdsale is Ownable {
   using SafeMath for uint;
 
+  EnjoyLifeCoinToken public token = new EnjoyLifeCoinToken();
+
   address feeAccount;         // 0xdA39e0Ce2adf93129D04F53176c7Bfaaae8B051a
   address bountyAccount;      // 0x0064952457905eBFB9c0292200A74B1d7414F081
   address projectTeamAccount; // 0x980F0A3fEDc9D5236C787A827ab7c2276227D78d
@@ -19,18 +21,18 @@ contract Crowdsale is Ownable {
   uint public startICO;    // 01.12.2017 12:00 UTC+2 --> 1512122400
   uint public endICO;      // 15.01.2018 00:00 UTC+2 --> 1515967200
 
-  uint public rate = 50;                   // 0.5 USD
-  uint public minInvestmentPreICO = 20000; // 200 USD
-  uint public minInvestmentICO = 5000;     // 50 USD
-  uint public currentRateUSD = 30000;      // 300 USD = 1 ether
+  uint public constant rate = 50;                   // 0.5 USD
+  uint public constant minInvestmentPreICO = 20000; // 200 USD
+  uint public constant minInvestmentICO = 5000;     // 50 USD
+  uint public constant currentRateUSD = 30000;      // 300 USD = 1 ether
 
-  uint minCapICO = 160000000;    // 1 600 000 tokens
-  uint maxCapPreICO = 100000000; // 1 000 000 tokens
+  uint public decimals = 100; // 10**uint(token.decimals());
+
+  uint constant minCapICO = 160000000;    // 1 600 000 tokens
+  uint constant maxCapPreICO = 100000000; // 1 000 000 tokens
 
   uint public tokensCountPreICO;
   uint public tokensCountICO;
-
-  EnjoyLifeCoinToken public token = new EnjoyLifeCoinToken();
 
   event TransferWei(address indexed addr, uint amount);
 
@@ -44,7 +46,7 @@ contract Crowdsale is Ownable {
   modifier icoOn() { require(startICO < now && now < endICO); _; }
 
   function createPreIcoTokens() preIcoOn payable {
-    uint valueUSD = msg.value.mul(100).mul(currentRateUSD).div(1 ether);
+    uint valueUSD = msg.value.mul(decimals).mul(currentRateUSD).div(1 ether);
     uint remainderTokens = maxCapPreICO.sub(tokensCountPreICO);
 
     if (valueUSD >= minInvestmentPreICO && remainderTokens > 0) {
@@ -62,13 +64,12 @@ contract Crowdsale is Ownable {
       }
 
       uint tokens = valueUSD.sub(surrenderUSD).div(rate);
-      uint bonusTokens = tokens >> 1;
-      uint tokensWithBonus = tokens + bonusTokens;
+      uint tokensWithBonus = tokens + tokens >> 1;
 
       // Check for surrender by remaining tokens
       if (tokens > remainderTokens) {
         uint overTokens = tokens.sub(remainderTokens);
-        surrender = overTokens.mul(rate).mul(1 ether).div(100).div(currentRateUSD);
+        surrender = overTokens.mul(rate).mul(1 ether).div(decimals).div(currentRateUSD);
 
         msg.sender.transfer(surrender);
         TransferWei(msg.sender, surrender);
@@ -88,8 +89,20 @@ contract Crowdsale is Ownable {
     }
   }
 
+  function bonusCalculationICO(uint _tokens) internal returns(uint) {
+    if (now > startICO + 12 days) {} else if (now > startICO + 9 days) {
+      return _tokens.div(20);                // 5%
+    } else if (now > startICO + 6 days) {
+      return _tokens.div(10);                // 10%
+    } else if (now > startICO + 3 days) {
+      return _tokens.mul(15).div(decimals);  // 15%
+    } else {
+      return _tokens.div(5);                 // 20%
+    }
+  }
+
   function createIcoTokens() icoOn payable {
-    uint valueUSD = msg.value.mul(100).mul(currentRateUSD).div(1 ether);
+    uint valueUSD = msg.value.mul(decimals).mul(currentRateUSD).div(1 ether);
     // TODO: ADD Remainder
     if (valueUSD >= minInvestmentICO) {
       uint totalValue = msg.value;
@@ -104,20 +117,8 @@ contract Crowdsale is Ownable {
         totalValue = totalValue.sub(surrender);
       }
 
-      uint tokens = valueUSD.sub(surrenderUSD).mul(100).div(rate);
-
-      // Сalculation of bonuses by days
-      uint bonusTokens;
-      if (now > startICO + 12 days) {} else if (now > startICO + 9 days) {
-        bonusTokens = tokens.div(20);           // 5%
-      } else if (now > startICO + 6 days) {
-        bonusTokens = tokens.div(10);           // 10%
-      } else if (now > startICO + 3 days) {
-        bonusTokens = tokens.mul(15).div(100);  // 15%
-      } else {
-        bonusTokens = tokens.div(5);            // 20%
-      }
-      uint tokensWithBonus = tokens + bonusTokens;
+      uint tokens = valueUSD.sub(surrenderUSD).mul(decimals).div(rate);
+      uint tokensWithBonus = tokens + bonusCalculationICO(tokens);
 
       tokensCountICO = tokensCountICO.add(tokensWithBonus);
       balancesICO[msg.sender] = balancesICO[msg.sender].add(totalValue);
@@ -126,6 +127,31 @@ contract Crowdsale is Ownable {
     } else {
       revert();
     }
+  }
+
+  function sendToAddress(address _address, uint _tokens) onlyOwner {
+    uint tempTokens = _tokens.mul(decimals);
+    uint remainderTokens = token.balanceOf(this);
+    token.transfer(_address, tempTokens > remainderTokens ? remainderTokens : tempTokens);
+  }
+
+  function sendToAddressWithTime(address _address, uint _tokens, uint _time) onlyOwner {
+    if (startPreICO < _time && _time < endICO) {
+      uint bonus;
+      uint tempTokens = _tokens.mul(decimals);
+      if (_time < startICO) {
+        bonus = tempTokens >> 1;
+      } else {
+        bonus = bonusCalculationICO(tempTokens);
+      }
+      uint tokensWithBonus = tempTokens + bonus;
+      uint remainderTokens = token.balanceOf(this);
+      token.transfer(_address, tokensWithBonus > remainderTokens ? remainderTokens : tokensWithBonus);
+    }
+  }
+
+  function getTokens() public constant returns (uint) {
+    return token.INITIAL_SUPPLY();
   }
 
   function() payable {

@@ -7,10 +7,10 @@ contract EnjoyLifeCoinToken is BurnableToken {
   string public constant symbol = 'ENL';
   uint32 public constant decimals = 2;
 
-  uint256 public INITIAL_SUPPLY = 5000000000;
+  uint256 public initialSupply = 5E9; // 50 000 000
 
   function EnjoyLifeCoinToken() {
-    totalSupply = INITIAL_SUPPLY;
-    balances[msg.sender] = INITIAL_SUPPLY;
+    totalSupply = initialSupply;
+    balances[msg.sender] = initialSupply;
   }
 }

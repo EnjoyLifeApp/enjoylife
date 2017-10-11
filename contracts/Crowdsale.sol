@@ -12,12 +12,16 @@ contract Crowdsale is Ownable {
   enum DistributionStages { initial, minCapMet, threeMillions, fiveMillions, sevenMillions, finishes }
   DistributionStages public currentStage = DistributionStages.initial;
 
+  uint8 public numberRound = 1;
+
   address feeAccount;         // 0xdA39e0Ce2adf93129D04F53176c7Bfaaae8B051a
   address bountyAccount;      // 0x0064952457905eBFB9c0292200A74B1d7414F081
   address projectTeamAccount; // 0x980F0A3fEDc9D5236C787A827ab7c2276227D78d
   address otherAccount;       // 0x3433974240b95bafc8705074c0859cee92a562f8
 
+  mapping(address => uint) public investrorsTokens;
   mapping(address => uint) public balancesICO;
+  uint public getAllInvestors;
 
   uint public startPreICO; // 01.11.2017 12:00 UTC+2 --> 1509530400
   uint public startICO;    // 01.12.2017 12:00 UTC+2 --> 1512122400
@@ -30,8 +34,8 @@ contract Crowdsale is Ownable {
 
   uint public decimals = 100; // 10**uint(token.decimals());
 
-  uint constant minCapICO = 160000000;    // 1 600 000 tokens
-  uint constant maxCapPreICO = 100000000; // 1 000 000 tokens
+  uint constant minCapICO = 16E7;   // 1 600 000 tokens
+  uint constant maxCapPreICO = 1E8; // 1 000 000 tokens
 
   uint public tokensCountPreICO;
   uint public tokensCountICO;
@@ -46,6 +50,13 @@ contract Crowdsale is Ownable {
 
   modifier preIcoOn() { require(startPreICO < now && now < startICO); _; }
   modifier icoOn() { require(startICO < now && now < endICO); _; }
+
+  function calculationNumberInvestors(address _addr, uint _tokens) internal {
+    if (investrorsTokens[_addr] == 0) {
+      getAllInvestors = getAllInvestors.add(1);
+      investrorsTokens[_addr] = investrorsTokens[_addr].add(_tokens);
+    }
+  }
 
   function createPreIcoTokens() preIcoOn payable {
     uint valueUSD = msg.value.mul(decimals).mul(currentRateUSD).div(1 ether);
@@ -82,10 +93,11 @@ contract Crowdsale is Ownable {
         tokensWithBonus = remainderTokens;
       }
       tokensCountPreICO = tokensCountPreICO.add(tokensWithBonus);
+      calculationNumberInvestors(msg.sender, tokensWithBonus);
       token.transfer(msg.sender, tokensWithBonus);
 
       // Distribute funds
-      uint projectTeamValue = msg.value.mul(95).div(100);
+      uint projectTeamValue = msg.value.mul(95).div(decimals);
       uint feeValue = msg.value.sub(projectTeamValue);
       projectTeamAccount.transfer(projectTeamValue);       // 95%
       feeAccount.transfer(feeValue);                       // 5%
@@ -113,13 +125,13 @@ contract Crowdsale is Ownable {
     uint total = tokensCountPreICO + tokensCountICO;
     if (currentStage == DistributionStages.initial && total >= minCapICO) {
       currentStage = DistributionStages.minCapMet; distribute();
-    } else if (currentStage == DistributionStages.minCapMet && total >= 300000000) {
+    } else if (currentStage == DistributionStages.minCapMet && total >= 3E8) {     // 3 000 000
       currentStage = DistributionStages.threeMillions; distribute();
-    } else if (currentStage == DistributionStages.threeMillions && total >= 500000000) {
+    } else if (currentStage == DistributionStages.threeMillions && total >= 5E8) { // 5 000 000
       currentStage = DistributionStages.fiveMillions; distribute();
-    } else if (currentStage == DistributionStages.fiveMillions && total >= 700000000) {
+    } else if (currentStage == DistributionStages.fiveMillions && total >= 7E8) {  // 7 000 000
       currentStage = DistributionStages.sevenMillions; distribute();
-    } else if (currentStage == DistributionStages.sevenMillions && total == token.INITIAL_SUPPLY()) {
+    } else if (currentStage == DistributionStages.sevenMillions && total == token.initialSupply()) {
       currentStage = DistributionStages.finishes; distribute();
     }
   }
@@ -137,9 +149,10 @@ contract Crowdsale is Ownable {
   }
 
   function createIcoTokens() icoOn payable {
+    ethDistribution();
     uint valueUSD = msg.value.mul(decimals).mul(currentRateUSD).div(1 ether);
-    // TODO: ADD Remainder
-    if (valueUSD >= minInvestmentICO) {
+    uint remainderTokens = token.balanceOf(this);
+    if (valueUSD >= minInvestmentICO && remainderTokens > 0) {
       uint totalValue = msg.value;
 
       // Check for surrender by rate
@@ -155,9 +168,23 @@ contract Crowdsale is Ownable {
       uint tokens = valueUSD.sub(surrenderUSD).mul(decimals).div(rate);
       uint tokensWithBonus = tokens + bonusCalculationICO(tokens);
 
+      // Check for surrender by remaining tokens
+      if (tokens > remainderTokens) {
+        uint overTokens = tokens.sub(remainderTokens);
+        surrender = overTokens.mul(rate).mul(1 ether).div(decimals).div(currentRateUSD);
+
+        msg.sender.transfer(surrender);
+        TransferWei(msg.sender, surrender);
+        totalValue = totalValue.sub(surrender);
+
+        tokensWithBonus = remainderTokens;
+      } else if (tokensWithBonus > remainderTokens) {
+        tokensWithBonus = remainderTokens;
+      }
+
       tokensCountICO = tokensCountICO.add(tokensWithBonus);
       balancesICO[msg.sender] = balancesICO[msg.sender].add(totalValue);
-
+      calculationNumberInvestors(msg.sender, tokensWithBonus);
       token.transfer(msg.sender, tokensWithBonus);
     } else {
       revert();
@@ -165,28 +192,37 @@ contract Crowdsale is Ownable {
   }
 
   function sendToAddress(address _address, uint _tokens) onlyOwner {
-    uint tempTokens = _tokens.mul(decimals);
-    uint remainderTokens = token.balanceOf(this);
-    token.transfer(_address, tempTokens > remainderTokens ? remainderTokens : tempTokens);
-  }
-
-  function sendToAddressWithTime(address _address, uint _tokens, uint _time) onlyOwner {
-    if (startPreICO < _time && _time < endICO) {
-      uint bonus;
+    if (startPreICO < now && now < endICO) {
       uint tempTokens = _tokens.mul(decimals);
-      if (_time < startICO) {
-        bonus = tempTokens >> 1;
-      } else {
-        bonus = bonusCalculationICO(tempTokens);
-      }
-      uint tokensWithBonus = tempTokens + bonus;
+      uint tokensWithBonus = tempTokens + (now < startICO ? tempTokens >> 1 : bonusCalculationICO(tempTokens));
       uint remainderTokens = token.balanceOf(this);
-      token.transfer(_address, tokensWithBonus > remainderTokens ? remainderTokens : tokensWithBonus);
+      uint totalTokens = tokensWithBonus > remainderTokens ? remainderTokens : tokensWithBonus;
+      calculationNumberInvestors(_address, totalTokens);
+      token.transfer(_address, totalTokens);
     }
   }
 
+  function sendToAddressWithBonus(address _address, uint _tokens, uint _bonus) onlyOwner {
+    uint tempTokens = _tokens.add(_bonus).mul(decimals);
+    uint remainderTokens = token.balanceOf(this);
+    uint totalTokens = tempTokens > remainderTokens ? remainderTokens : tempTokens;
+    calculationNumberInvestors(_address, totalTokens);
+    token.transfer(_address, totalTokens);
+  }
+  
+  function refund() {
+    require(now > endICO && (tokensCountPreICO + tokensCountICO) < minCapICO);
+    msg.sender.transfer(balancesICO[msg.sender]);
+    TransferWei(msg.sender, balancesICO[msg.sender]);
+    balancesICO[msg.sender] = 0;
+  }
+
   function getTokens() public constant returns (uint) {
-    return token.INITIAL_SUPPLY();
+    return token.balanceOf(this);
+  }
+
+  function getSoldToken() public constant returns (uint) {
+    return token.initialSupply().sub(token.balanceOf(this));
   }
 
   function() payable {

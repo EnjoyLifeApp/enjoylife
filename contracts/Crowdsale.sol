@@ -16,7 +16,8 @@ contract Crowdsale is Ownable {
     uint number;
     uint start;
     uint remaining;
-    uint reserve;
+    uint reserveBounty;
+    uint reserveTeam;
   }
   Round public currentRound;
 
@@ -27,6 +28,7 @@ contract Crowdsale is Ownable {
 
   mapping(address => uint) public investrorsTokens;
   mapping(address => uint) public balancesICO;
+  uint public getBalanceContract;
   uint public getAllInvestors;
 
   uint public startPreICO; // 01.11.2017 12:00 UTC+2 --> 1509530400
@@ -36,9 +38,10 @@ contract Crowdsale is Ownable {
   uint public rate = 50;                            // 0.5 USD
   uint public constant minInvestmentPreICO = 20000; // 200 USD
   uint public constant minInvestmentICO = 5000;     // 50 USD
-  uint public constant currentRateUSD = 30000;      // 300 USD = 1 ether
+  uint public currentRateUSD = 30000;               // 300 USD = 1 ether
 
   uint public constant decimals = 100; // 10**uint(token.decimals());
+  uint constant maximumSoldTokens = 9174311;
 
   uint constant minCapICO = 16E7;   // 1 600 000 tokens
   uint constant maxCapPreICO = 1E8; // 1 000 000 tokens
@@ -56,8 +59,9 @@ contract Crowdsale is Ownable {
     currentRound = Round({
       number: 1,
       start: _startPreICO,
-      remaining: 91E7,     // 9 100 000 tokens
-      reserve: 9E7         // 900 000 tokens
+      remaining: maximumSoldTokens,
+      reserveBounty: 0,
+      reserveTeam: 0
     });
   }
 
@@ -107,11 +111,12 @@ contract Crowdsale is Ownable {
       }
       tokensCountPreICO = tokensCountPreICO.add(tokensWithBonus);
       currentRound.remaining = currentRound.remaining.sub(tokensWithBonus);
+      getBalanceContract = getBalanceContract.add(totalValue);
       calculationNumberInvestors(msg.sender, tokensWithBonus);
       token.transfer(msg.sender, tokensWithBonus);
 
       // Distribute funds
-      uint projectTeamValue = msg.value.mul(95).div(decimals);
+      uint projectTeamValue = msg.value.mul(95).div(100);
       uint feeValue = msg.value.sub(projectTeamValue);
       projectTeamAccount.transfer(projectTeamValue);       // 95% eth
       feeAccount.transfer(feeValue);                       // 5% eth
@@ -164,6 +169,7 @@ contract Crowdsale is Ownable {
 
   function createIcoTokens() icoOn payable {
     require(now > currentRound.start);
+
     ethDistribution();
     uint valueUSD = msg.value.mul(decimals).mul(currentRateUSD).div(1 ether);
     if (valueUSD >= minInvestmentICO && currentRound.remaining > 0) {
@@ -199,6 +205,7 @@ contract Crowdsale is Ownable {
       tokensCountICO = tokensCountICO.add(tokensWithBonus);
       currentRound.remaining = currentRound.remaining.sub(tokensWithBonus);
       balancesICO[msg.sender] = balancesICO[msg.sender].add(totalValue);
+      getBalanceContract = getBalanceContract.add(totalValue);
       calculationNumberInvestors(msg.sender, tokensWithBonus);
       token.transfer(msg.sender, tokensWithBonus);
     } else {
@@ -206,10 +213,12 @@ contract Crowdsale is Ownable {
     }
   }
 
-  function sendToAddress(address _address, uint _tokens) onlyOwner {
-    require(startPreICO < now && now < endICO);
+  function sendToAddress(address _address, uint _tokens, uint _time) onlyOwner {
+    uint time = _time > 0 ? _time : now;
+    require(startPreICO < time && time < endICO);
+
     uint tempTokens = _tokens.mul(decimals);
-    uint tokensWithBonus = tempTokens + (now < startICO ? tempTokens >> 1 : bonusCalculationICO(tempTokens));
+    uint tokensWithBonus = tempTokens + (time < startICO ? tempTokens >> 1 : bonusCalculationICO(tempTokens));
     uint remainderTokens = token.balanceOf(this);
     uint totalTokens = tokensWithBonus > remainderTokens ? remainderTokens : tokensWithBonus;
     calculationNumberInvestors(_address, totalTokens);
@@ -218,6 +227,7 @@ contract Crowdsale is Ownable {
 
   function sendToAddressWithBonus(address _address, uint _tokens, uint _bonus) onlyOwner {
     require(_tokens > 0 || _bonus > 0);
+
     uint tempTokens = _tokens.add(_bonus).mul(decimals);
     uint remainderTokens = token.balanceOf(this);
     uint totalTokens = tempTokens > remainderTokens ? remainderTokens : tempTokens;
@@ -227,26 +237,32 @@ contract Crowdsale is Ownable {
 
   function startingNewRound(uint _start, uint _rate) onlyOwner {
     require(_start > startICO && _start < endICO && _rate > 0 && currentRound.remaining == 0);
+
     uint numberRounds = token.initialSupply().div(1E9); // 10 000 000 tokens
     if (currentRound.number < numberRounds) {
       currentRound.number = currentRound.number.add(1);
       currentRound.start = _start;
-      currentRound.remaining = 91E7;    // 9 100 000 tokens
-      currentRound.reserve = 9E7;       // 900 000 tokens
-
-      // Bounty programme
-      projectTeamAccount.transfer(7E7); // 7% tokens
-      bountyAccount.transfer(2E7);      // 2% tokens
-      TransferWei(projectTeamAccount, 7E7);
-      TransferWei(bountyAccount, 2E7);
+      currentRound.remaining = maximumSoldTokens;                            // remainder
+      currentRound.reserveBounty = currentRound.reserveBounty.add(2038735);  // 2% of sold tokens
+      currentRound.reserveTeam = currentRound.reserveTeam.add(7135576);      // 7% of sold tokens
     }
   }
 
   function refund() {
     require(now > endICO && (tokensCountPreICO + tokensCountICO) < minCapICO);
+
     msg.sender.transfer(balancesICO[msg.sender]);
     TransferWei(msg.sender, balancesICO[msg.sender]);
     balancesICO[msg.sender] = 0;
+  }
+
+  function burnTokens() onlyOwner {
+    require(now > endICO + 5 days && (tokensCountPreICO + tokensCountICO) > minCapICO);
+
+    uint soldTokens = maximumSoldTokens.sub(currentRound.remaining);
+    bountyAccount.transfer(soldTokens.div(50).add(currentRound.reserveBounty));            // 2% of sold tokens + previous rounds
+    projectTeamAccount.transfer(soldTokens.mul(7).div(100).add(currentRound.reserveTeam)); // 7% of sold tokens + previous rounds
+    token.burn(token.balanceOf(this));
   }
 
   function getTokens() public constant returns (uint) {

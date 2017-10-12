@@ -26,10 +26,10 @@ contract Crowdsale is Ownable {
   address projectTeamAccount; // 0x980F0A3fEDc9D5236C787A827ab7c2276227D78d
   address otherAccount;       // 0x3433974240b95bafc8705074c0859cee92a562f8
 
-  mapping(address => uint) public investrorsTokens;
+  mapping(address => uint) public investorsTokens;
+  address[] public investors;
   mapping(address => uint) public balancesICO;
   uint public getBalanceContract;
-  uint public getAllInvestors;
 
   uint public startPreICO; // 01.11.2017 12:00 UTC+2 --> 1509530400
   uint public startICO;    // 01.12.2017 12:00 UTC+2 --> 1512122400
@@ -40,7 +40,7 @@ contract Crowdsale is Ownable {
   uint public constant minInvestmentICO = 5000;     // 50 USD
   uint public currentRateUSD = 30000;               // 300 USD = 1 ether
 
-  uint public constant decimals = 100; // 10**uint(token.decimals());
+  uint constant decimals = 100; // 10**uint(token.decimals());
   uint constant maximumSoldTokens = 9174311;
 
   uint constant minCapICO = 16E7;   // 1 600 000 tokens
@@ -69,9 +69,9 @@ contract Crowdsale is Ownable {
   modifier icoOn() { require(startICO < now && now < endICO); _; }
 
   function calculationNumberInvestors(address _addr, uint _tokens) internal {
-    if (investrorsTokens[_addr] == 0) {
-      getAllInvestors = getAllInvestors.add(1);
-      investrorsTokens[_addr] = investrorsTokens[_addr].add(_tokens);
+    if (investorsTokens[_addr] == 0) {
+      investors.push(_addr);
+      investorsTokens[_addr] = investorsTokens[_addr].add(_tokens);
     }
   }
 
@@ -269,8 +269,12 @@ contract Crowdsale is Ownable {
     return token.balanceOf(this);
   }
 
-  function getSoldToken() public constant returns (uint) {
+  function getSoldTokens() public constant returns (uint) {
     return token.initialSupply().sub(token.balanceOf(this));
+  }
+
+  function getAllInvestors() public constant returns (uint) {
+    return investors.length;
   }
 
   function() payable {

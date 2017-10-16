@@ -52,8 +52,12 @@
     "asyncawait": "^1.0.6",
     "bootstrap": "4.0.0-alpha.6",
     "dotenv": "^2.0.0",
+    "input-moment": "^0.4.0",
+    "material-ui": "^0.19.4",
+    "moment": "^2.19.1",
     "react": "^15.4.2",
     "react-bootstrap-table": "^4.0.6",
+    "react-datetime": "^2.10.3",
     "react-dom": "^15.4.2",
     "react-transition-group": "^2.2.1",
     "reactstrap": "^4.8.0"

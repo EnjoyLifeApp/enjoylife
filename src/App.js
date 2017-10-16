@@ -1,13 +1,24 @@
-import React, { Component } from 'react'
+import React, { Component } from 'react';
+import moment from 'moment';
+
 import CrowdsaleContract from '../build/contracts/Crowdsale.json';
 import getWeb3 from './utils/getWeb3';
 
-import 'react-bootstrap-table/dist/react-bootstrap-table.min.css'
+import 'react-bootstrap-table/dist/react-bootstrap-table.min.css';
 import 'bootstrap/dist/css/bootstrap.css';
-import './css/App.css'
+import './css/App.css';
 
-import { Navbar, Row, Col, Button, Input } from 'reactstrap';
+import { Navbar, Row, Col, Input } from 'reactstrap';
 import { BootstrapTable, TableHeaderColumn } from 'react-bootstrap-table';
+
+import MuiThemeProvider from 'material-ui/styles/MuiThemeProvider';
+import getMuiTheme from 'material-ui/styles/getMuiTheme';
+import lightBaseTheme from 'material-ui/styles/baseThemes/lightBaseTheme';
+const lightMuiTheme = getMuiTheme(lightBaseTheme);
+
+import RaisedButton from 'material-ui/RaisedButton';
+import DatePicker from 'material-ui/DatePicker';
+import TimePicker from 'material-ui/TimePicker';
 
 const contract = require('truffle-contract');
 
@@ -16,11 +27,17 @@ class App extends Component {
     super(props);
 
     this.state = {
-      myTokens: 0,
-      investors: [
-        { address: '0xc17c953a066a02c753687c1527eaa9b067a6f762', tokens: 1000 },
-        { address: '0x4d0d10f132b7c4493c504eccb4527c0321715e8a', tokens: 3000 }
-      ]
+      // Information on sale
+      tokenRate: 0,
+      usdRate: 0,
+      minInvestmentPreICO: 0,
+      minInvestmentICO: 0,
+
+      // Manual send
+      timestamp: (new Date()).toLocaleString(),
+
+      // Start new round
+      newRoundStart: (new Date()).toLocaleString()
     }
   }
 
@@ -32,9 +49,18 @@ class App extends Component {
       // Crowdsale initialization
       crowdsale.setProvider(web3.currentProvider);
       const instance = await crowdsale.deployed();
-      const [owner, tokenAddress, startPreICO, startICO, endICO] = await Promise.all([
+      const [
+        owner, tokenAddress, startPreICO,
+        startICO, endICO, tokenRate,
+        usdRate, minInvestmentPreICO, minInvestmentICO,
+        currentRound, tokensCountPreICO, tokensCountICO,
+        numInvestors
+      ] = await Promise.all([
         instance.owner.call(), instance.token.call(), instance.startPreICO.call(),
-        instance.startICO.call(), instance.endICO.call()
+        instance.startICO.call(), instance.endICO.call(), instance.rate.call(),
+        instance.currentRateUSD.call(), instance.minInvestmentPreICO.call(), instance.minInvestmentICO.call(),
+        instance.currentRound.call(), instance.tokensCountPreICO.call(), instance.tokensCountICO.call(),
+        instance.getAllInvestors.call()
       ]);
 
       // Enjoy life token initialization
@@ -43,11 +69,21 @@ class App extends Component {
       enjoyLifeCoinToken.setProvider(web3.currentProvider);
       const instanceToken = enjoyLifeCoinToken.at(tokenAddress);
 
-      const [tokenName, tokenSymbol, decimals, initialSupply] = await Promise.all([
+      const [tokenName, tokenSymbol, decimals, initialSupply, myTokens] = await Promise.all([
         instanceToken.name.call(), instanceToken.symbol.call(),
-        instanceToken.decimals.call(), instanceToken.initialSupply.call()
+        instanceToken.decimals.call(), instanceToken.initialSupply.call(),
+        instanceToken.balanceOf(web3.eth.accounts[0])
       ]);
       const decimalsNum = decimals.toNumber();
+      const divider = Math.pow(10, decimalsNum);
+
+      // Get info about investors
+      let investorsTokens = [];
+      for (let i = 0; i < numInvestors; i++) {
+        const address = await instance.investors.call(i);
+        const tokens = await instance.investorsTokens.call(address);
+        investorsTokens.push({ address: address, tokens: tokens.toNumber() / divider });
+      }
 
       this.setState({
         // Information on contracts
@@ -60,22 +96,57 @@ class App extends Component {
         tokenName: tokenName,
         tokenSymbol: tokenSymbol,
         decimals: decimalsNum,
-        initialSupply: initialSupply.toNumber() / Math.pow(10, decimalsNum),
+        initialSupply: initialSupply.toNumber() / divider,
 
         // Information on the crowdsale
         crowdsaleAddress: crowdsale.address,
         owner: owner,
         startPreICO: new Date(startPreICO * 1000).toLocaleString(),
         startICO: new Date(startICO * 1000).toLocaleString(),
-        endICO: new Date(endICO * 1000).toLocaleString()
+        endICO: new Date(endICO * 1000).toLocaleString(),
+        tokenRate: tokenRate.toNumber() / divider,
+        usdRate: usdRate.toNumber() / divider,
+        minInvestmentPreICO: minInvestmentPreICO.toNumber() / divider,
+        minInvestmentICO: minInvestmentICO.toNumber() / divider,
+
+        // Round information
+        roundNumber: currentRound[0].toNumber(),
+        roundStart: new Date(currentRound[1] * 1000).toLocaleString(),
+        roundRemaining: currentRound[2].toNumber() / divider,
+
+        // My info
+        myAddress: web3.eth.accounts[0],
+        myTokens: myTokens.toNumber() / 100,
+
+        // Statistics
+        tokensCountPreICO: tokensCountPreICO.toNumber() / 100,
+        tokensCountICO: tokensCountICO.toNumber() / 100,
+        numInvestors: numInvestors.toNumber(),
+        investorsTokens: investorsTokens
       });
-      this.instantiateContract();
     } catch (error) {
       console.log(error);
     }
   }
 
-  instantiateContract() {
+  showDatePicker(f) {
+    this.refs.manualDP.openDialog();
+    this.setState({ flag: f });
+    console.log('showDatePicker');
+  }
+
+  showTimePicker(event) {
+    this.refs.manualTP.openDialog();
+    this.setState({ datePicker: event });
+    console.log('showTimePicker', event);
+  }
+
+  setTimePicker(time) {
+    time.setDate(this.state.datePicker.getDate());
+    time.setMonth(this.state.datePicker.getMonth());
+    time.setFullYear(this.state.datePicker.getFullYear());
+    time.setSeconds(0);
+    this.setState(this.state.flag === 'manual' ? { timestamp: time.toLocaleString() } : { newRoundStart: time.toLocaleString() } );
   }
 
   render() {
@@ -89,21 +160,37 @@ class App extends Component {
             <div className='main-container'>
               <Row>
                 <Col>
-                  <h4>My tokens</h4>
+                  <h4>My information</h4>
                   <hr className='my-2'/>
+                  <Row><Col><label>Address</label></Col></Row>
+                  <Row className='form-group'>
+                    <Col>
+                      <Input disabled={true} value={this.state.myAddress} />
+                    </Col>
+                  </Row>
                   <Row>
-                    <Col><label>Balance</label></Col>
-                    <Col>{this.state.myTokens}</Col>
+                    <Col md={{ size: 8 }}><label>Tokens bought by me</label></Col>
+                    <Col md={{ size: 4 }}>{this.state.myTokens}</Col>
+                  </Row>
+                  <Row>
+                    <Col md={{ size: 8 }}><label>Left tokens in the current round</label></Col>
+                    <Col md={{ size: 4 }}>{this.state.roundRemaining}</Col>
                   </Row>
                   <label><strong>Buying tokens</strong></label>
                   <Row>
                     <Col>
                       <Input
-                        placeholder='Enter amount'
+                        type='number'
+                        value={this.state.amount}
+                        onChange={e => this.setState({ amount: e.target.value })}
+                        placeholder='Enter amount (ETH)'
+                        onKeyDown={this.handleSubmit}
                       />
                     </Col>
                     <Col>
-                      <Button color='info'>Buy</Button>
+                      <MuiThemeProvider muiTheme={lightMuiTheme}>
+                        <RaisedButton label='Buy' primary={true} />
+                      </MuiThemeProvider>
                     </Col>
                   </Row>
                 </Col>
@@ -116,19 +203,19 @@ class App extends Component {
                   </Row>
                   <Row>
                     <Col md={{ size: 10 }}><label>ETH/USD</label></Col>
-                    <Col md={{ size: 2 }}>{this.state.usdRate}</Col>
+                    <Col md={{ size: 2 }}>{this.state.usdRate}$</Col>
                   </Row>
                   <Row>
                     <Col md={{ size: 10 }}><label>Token rate</label></Col>
-                    <Col md={{ size: 2 }}>{this.state.tokenRate}</Col>
+                    <Col md={{ size: 2 }}>{this.state.tokenRate}$</Col>
                   </Row>
                   <Row>
                     <Col md={{ size: 10 }}><label>Minimum investment for pre-ICO</label></Col>
-                    <Col md={{ size: 2 }}>{this.state.minInvestmentPreICO}</Col>
+                    <Col md={{ size: 2 }}>{this.state.minInvestmentPreICO}$</Col>
                   </Row>
                   <Row>
                     <Col md={{ size: 10 }}><label>Minimum investment for ICO</label></Col>
-                    <Col md={{ size: 2 }}>{this.state.minInvestmentICO}</Col>
+                    <Col md={{ size: 2 }}>{this.state.minInvestmentICO}$</Col>
                   </Row>
                 </Col>
               </Row>
@@ -177,9 +264,34 @@ class App extends Component {
                   </Row>
                   <Row className='form-group'>
                     <Col md={{ size: 4 }}><div className='mylabel'>Timestamp</div></Col>
-                    <Col md={{ size: 6, pull: 1 }}>(Time picker)</Col>
+                    <Col md={{ size: 6, pull: 1 }}>
+                      <Input
+                        readOnly
+                        value={this.state.timestamp}
+                        onFocus={() => this.showDatePicker('manual')}
+                        onKeyDown={this.handleSubmit}
+                      />
+                      <MuiThemeProvider muiTheme={lightMuiTheme}>
+                        <div>
+                          <DatePicker
+                            id='manualDP'
+                            ref='manualDP'
+                            onChange={(x, event) => { this.showTimePicker(event) } }
+                            style={{ display: 'none' }}
+                          />
+                          <TimePicker
+                            id='manualTP'
+                            ref='manualTP'
+                            onChange={(x, time) => { this.setTimePicker(time) }}
+                            style={{ display: 'none' }}
+                          />
+                        </div>
+                      </MuiThemeProvider>
+                    </Col>
                   </Row>
-                  <Button color='info'>Send</Button>
+                  <MuiThemeProvider muiTheme={lightMuiTheme}>
+                    <RaisedButton label='Send' primary={true} />
+                  </MuiThemeProvider>
                 </Col>
               </Row>
               <Row>
@@ -191,28 +303,24 @@ class App extends Component {
                     </Col>
                   </Row>
                   <Row>
-                    <Col md={{ size: 6 }}>
+                    <Col md={{ size: 8 }}>
                       <Row>
-                        <Col><label>Sold tokens</label></Col>
-                        <Col>0</Col>
+                        <Col><label>Number of tokens sold at pre-ICO</label></Col>
+                        <Col>{this.state.tokensCountPreICO}</Col>
                       </Row>
                       <Row>
-                        <Col><label>Total amount</label></Col>
-                        <Col>0</Col>
-                      </Row>
-                      <Row>
-                        <Col><label>Left tokens by round</label></Col>
-                        <Col>0</Col>
+                        <Col><label>Number of tokens sold at ICO</label></Col>
+                        <Col>{this.state.tokensCountICO}</Col>
                       </Row>
                       <Row>
                         <Col><label>Investors Count</label></Col>
-                        <Col>0</Col>
+                        <Col>{this.state.numInvestors}</Col>
                       </Row>
                     </Col>
                   </Row>
                   <Row>
                     <Col>
-                      <BootstrapTable data={this.state.investors} version='4' striped={true} hover={true}>
+                      <BootstrapTable data={this.state.investorsTokens} version='4' striped={true} hover={true}>
                         <TableHeaderColumn dataField='address' isKey={true}>Investor's address</TableHeaderColumn>
                         <TableHeaderColumn dataField='tokens'>Tokens</TableHeaderColumn>
                       </BootstrapTable>
@@ -237,20 +345,20 @@ class App extends Component {
                 </Col>
               </Row>
               <Row>
-                <Col><label>Name</label></Col>
-                <Col>{this.state.tokenName}</Col>
+                <Col md={{ size: 7 }}><label>Name</label></Col>
+                <Col md={{ size: 5 }}>{this.state.tokenName}</Col>
               </Row>
               <Row>
-                <Col><label>Symbol</label></Col>
-                <Col>{this.state.tokenSymbol}</Col>
+                <Col md={{ size: 7 }}><label>Symbol</label></Col>
+                <Col md={{ size: 5 }}>{this.state.tokenSymbol}</Col>
               </Row>
               <Row>
-                <Col><label>Decimals</label></Col>
-                <Col>{this.state.decimals}</Col>
+                <Col md={{ size: 7 }}><label>Decimals</label></Col>
+                <Col md={{ size: 5 }}>{this.state.decimals}</Col>
               </Row>
               <Row>
-                <Col><label>Initial supply</label></Col>
-                <Col>{this.state.initialSupply}</Col>
+                <Col md={{ size: 7 }}><label>Initial supply</label></Col>
+                <Col md={{ size: 5 }}>{this.state.initialSupply}</Col>
               </Row>
               <Row>
                 <Col>
@@ -259,45 +367,56 @@ class App extends Component {
                 </Col>
               </Row>
               <Row>
-                <Col><label>Beginning of pre-ICO</label></Col>
-                <Col>{this.state.startPreICO}</Col>
+                <Col md={{ size: 7 }}><label>Beginning of pre-ICO</label></Col>
+                <Col md={{ size: 5 }}>{this.state.startPreICO}</Col>
               </Row>
               <Row>
-                <Col><label>Beginning of ICO</label></Col>
-                <Col>{this.state.startICO}</Col>
+                <Col md={{ size: 7 }}><label>Beginning of ICO</label></Col>
+                <Col md={{ size: 5 }}>{this.state.startICO}</Col>
               </Row>
               <Row>
-                <Col><label>End of ICO</label></Col>
-                <Col>{this.state.endICO}</Col>
+                <Col md={{ size: 7 }}><label>End of ICO</label></Col>
+                <Col md={{ size: 5 }}>{this.state.endICO}</Col>
               </Row>
               <Row>
-                <Col><label>Number of the current round</label></Col>
-                <Col>0</Col>
+                <Col>
+                  <h5>Round info</h5>
+                  <hr className='my-2'/>
+                </Col>
+              </Row>
+              <Row>
+                <Col md={{ size: 7 }}><label>Number of the current round</label></Col>
+                <Col md={{ size: 5 }}>{this.state.roundNumber}</Col>
+              </Row>
+              <Row>
+                <Col md={{ size: 7 }}><label>Beginning of the round</label></Col>
+                <Col md={{ size: 5 }}>{this.state.roundStart}</Col>
               </Row>
               <Row className='form-group'>
                 <Col md={{ size: 12 }}>
                   <label><strong>Start a new round (owner)</strong></label>
                 </Col>
-                <Col md={{ size: 6 }}>
+                <Col>
                   <Input
                     type='number'
                     value={this.state.tokenRate}
                     onChange={e => this.setState({ tokenRate: e.target.value })}
-                    placeholder='Enter your new rate'
+                    placeholder='Enter new rate (USD)'
                     onKeyDown={this.handleSubmit}
                   />
                 </Col>
-                <Col md={{ size: 6 }}>
+                <Col>
                   <Input
-                    type='number'
-                    value={this.state.tokenRate}
-                    onChange={e => this.setState({ tokenRate: e.target.value })}
-                    placeholder='Time picker'
+                    readOnly
+                    value={this.state.newRoundStart}
+                    onFocus={() => this.showDatePicker('round')}
                     onKeyDown={this.handleSubmit}
                   />
                 </Col>
               </Row>
-              <Button color='info'>Start</Button>
+              <MuiThemeProvider muiTheme={lightMuiTheme}>
+                <RaisedButton label='Start' primary={true} />
+              </MuiThemeProvider>
               <Row>
                 <Col>
                   <h5>Contract info</h5>
@@ -327,7 +446,9 @@ class App extends Component {
                   />
                 </Col>
               </Row>
-              <Button color='info'>Submit</Button>
+              <MuiThemeProvider muiTheme={lightMuiTheme}>
+                <RaisedButton label='Submit' primary={true} />
+              </MuiThemeProvider>
             </div>
           </Col>
         </Row>

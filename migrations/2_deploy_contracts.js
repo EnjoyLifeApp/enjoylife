@@ -1,4 +1,4 @@
-var Crowdsale = artifacts.require("./Crowdsale.sol");
+const Crowdsale = artifacts.require("./Crowdsale.sol");
 
 module.exports = function(deployer) {
   deployer.deploy(Crowdsale);

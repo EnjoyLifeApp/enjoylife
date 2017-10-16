@@ -41,7 +41,7 @@ contract Crowdsale is Ownable {
   uint public currentRateUSD = 30000;               // 300 USD = 1 ether
 
   uint constant decimals = 100; // 10**uint(token.decimals());
-  uint constant maximumSoldTokens = 9174311;
+  uint constant maximumSoldTokens = 917431100;
 
   uint constant minCapICO = 16E7;   // 1 600 000 tokens
   uint constant maxCapPreICO = 1E8; // 1 000 000 tokens
@@ -69,10 +69,8 @@ contract Crowdsale is Ownable {
   modifier icoOn() { require(startICO < now && now < endICO); _; }
 
   function calculationNumberInvestors(address _addr, uint _tokens) internal {
-    if (investorsTokens[_addr] == 0) {
-      investors.push(_addr);
-      investorsTokens[_addr] = investorsTokens[_addr].add(_tokens);
-    }
+    if (investorsTokens[_addr] == 0) investors.push(_addr);
+    investorsTokens[_addr] = investorsTokens[_addr].add(_tokens);
   }
 
   function createPreIcoTokens() preIcoOn payable {
@@ -243,8 +241,8 @@ contract Crowdsale is Ownable {
       currentRound.number = currentRound.number.add(1);
       currentRound.start = _start;
       currentRound.remaining = maximumSoldTokens;                            // remainder
-      currentRound.reserveBounty = currentRound.reserveBounty.add(2038735);  // 2% of sold tokens
-      currentRound.reserveTeam = currentRound.reserveTeam.add(7135576);      // 7% of sold tokens
+      currentRound.reserveBounty = currentRound.reserveBounty.add(203873500);  // 2% of sold tokens
+      currentRound.reserveTeam = currentRound.reserveTeam.add(713557600);      // 7% of sold tokens
     }
   }
 

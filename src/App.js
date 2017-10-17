@@ -30,18 +30,36 @@ class App extends Component {
     super(props);
 
     this.state = {
-      status: 'Unknown',
+      // Addresses
+      owner: '',
+      myAddress: '',
+      tokenAddress: '',
+      crowdsaleAddress: '',
 
       // Information on sale
       usdRate: 0,
       minInvestmentPreICO: 0,
       minInvestmentICO: 0,
 
-      timestamp: new Date().getTime(),
+      // Manual send tokens
+      investorAddressWithTime: '',
+      investorTokensWithTime: '',
+      investorTimestamp: new Date().getTime(),
+      investorAddressWithBonus: '',
+      investorTokensWithBonus: '',
+      investorBonuses: '',
+
       // Start new round
+      newTokenRate: '',
       newRoundStart: new Date(),
 
-      tab: 'a'
+      // Transfer ownership
+      newOwner: '',
+
+      // Other
+      amount: '',
+      tab: 'a',
+      status: 'Unknown'
     }
   }
 
@@ -133,6 +151,39 @@ class App extends Component {
     }
   }
 
+  async updateState() {
+    const { web3, instanceCrowdsale, instanceToken, divider } = this.state;
+
+    // Fields update
+    const [myTokens, tokensCountPreICO, tokensCountICO, numInvestors, currentRound] = await Promise.all([
+      instanceToken.balanceOf(web3.eth.accounts[0]), instanceCrowdsale.tokensCountPreICO.call(),
+      instanceCrowdsale.tokensCountICO.call(), instanceCrowdsale.getAllInvestors.call(),
+      instanceCrowdsale.currentRound.call()
+    ]);
+
+    // Get info about investors
+    let investorsTokens = [];
+    for (let i = 0; i < numInvestors; i++) {
+      const address = await instanceCrowdsale.investors.call(i);
+      const tokens = await instanceCrowdsale.investorsTokens.call(address);
+      investorsTokens.push({ address: address, tokens: tokens.toNumber() / divider });
+    }
+
+    this.setState({
+      myTokens: myTokens.toNumber() / divider,
+      tokensCountPreICO: tokensCountPreICO.toNumber() / divider,
+      tokensCountICO: tokensCountICO.toNumber() / divider,
+      numInvestors: numInvestors.toNumber(),
+      investorsTokens: investorsTokens,
+
+      // Round information
+      roundNumber: currentRound[0].toNumber(),
+      roundStart: new Date(currentRound[1] * 1000).toLocaleString(),
+      roundRate: currentRound[2].toNumber() / divider,
+      roundRemaining: currentRound[3].toNumber() / divider
+    });
+  }
+
   showDatePicker(f) {
     this.refs.manualDP.openDialog();
     this.setState({ flag: f });
@@ -148,11 +199,11 @@ class App extends Component {
     time.setMonth(this.state.datePicker.getMonth());
     time.setFullYear(this.state.datePicker.getFullYear());
     time.setSeconds(0);
-    this.setState(this.state.flag === 'manual' ? { timestamp: time.getTime() } : { newRoundStart: time } );
+    this.setState(this.state.flag === 'manual' ? { investorTimestamp: time.getTime() } : { newRoundStart: time } );
   }
 
   buyingTokens() {
-    const { web3, instanceCrowdsale, instanceToken, amount, crowdsaleAddress, divider } = this.state;
+    const { web3, amount, crowdsaleAddress } = this.state;
     web3.eth.sendTransaction({
       from: web3.eth.accounts[0],
       to: crowdsaleAddress,
@@ -163,35 +214,7 @@ class App extends Component {
         console.error(error);
       } else {
         console.log('Tx:', tx);
-
-        // Fields update
-        const [myTokens, tokensCountPreICO, tokensCountICO, numInvestors, currentRound] = await Promise.all([
-          instanceToken.balanceOf(web3.eth.accounts[0]), instanceCrowdsale.tokensCountPreICO.call(),
-          instanceCrowdsale.tokensCountICO.call(), instanceCrowdsale.getAllInvestors.call(),
-          instanceCrowdsale.currentRound.call()
-        ]);
-
-        // Get info about investors
-        let investorsTokens = [];
-        for (let i = 0; i < numInvestors; i++) {
-          const address = await instanceCrowdsale.investors.call(i);
-          const tokens = await instanceCrowdsale.investorsTokens.call(address);
-          investorsTokens.push({ address: address, tokens: tokens.toNumber() / divider });
-        }
-
-        this.setState({
-          myTokens: myTokens.toNumber() / divider,
-          tokensCountPreICO: tokensCountPreICO.toNumber() / divider,
-          tokensCountICO: tokensCountICO.toNumber() / divider,
-          numInvestors: numInvestors.toNumber(),
-          investorsTokens: investorsTokens,
-
-          // Round information
-          roundNumber: currentRound[0].toNumber(),
-          roundStart: new Date(currentRound[1] * 1000).toLocaleString(),
-          roundRate: currentRound[2].toNumber() / divider,
-          roundRemaining: currentRound[3].toNumber() / divider
-        });
+        this.updateState();
       }
     });
   }
@@ -205,64 +228,29 @@ class App extends Component {
   }
 
   async startNewRound() {
-    const { web3, instanceCrowdsale, newTokenRate, newRoundStart, divider } = this.state;
+    const { web3, instanceCrowdsale, newTokenRate, newRoundStart } = this.state;
     await instanceCrowdsale.startingNewRound(newRoundStart.getTime() / 1000, newTokenRate * 100, { from: web3.eth.accounts[0], gas: 200000 });
 
-    const currentRound = await instanceCrowdsale.currentRound.call();
-    this.setState({
-      // Round information
-      roundNumber: currentRound[0].toNumber(),
-      roundStart: new Date(currentRound[1] * 1000).toLocaleString(),
-      roundRate: currentRound[2].toNumber() / divider,
-      roundRemaining: currentRound[3].toNumber() / divider
-    });
+    this.updateState();
   }
 
   async manualSendTokensWithTime() {
     const {
-      web3, instanceCrowdsale, instanceToken,
-      investorAddressWithTime, investorTokensWithTime, timestamp,
-      divider
+      web3, instanceCrowdsale, investorAddressWithTime,
+      investorTokensWithTime, investorTimestamp, divider
     } = this.state;
-    console.log(timestamp, timestamp / 1000);
+
     await instanceCrowdsale.sendToAddress(
-      investorAddressWithTime, investorTokensWithTime * divider, timestamp / 1000,
+      investorAddressWithTime, investorTokensWithTime * divider, investorTimestamp / 1000,
       { from: web3.eth.accounts[0], gas: 200000 }
     );
 
-    // Fields update
-    const [myTokens, tokensCountPreICO, tokensCountICO, numInvestors, currentRound] = await Promise.all([
-      instanceToken.balanceOf(web3.eth.accounts[0]), instanceCrowdsale.tokensCountPreICO.call(),
-      instanceCrowdsale.tokensCountICO.call(), instanceCrowdsale.getAllInvestors.call(),
-      instanceCrowdsale.currentRound.call()
-    ]);
-
-    // Get info about investors
-    let investorsTokens = [];
-    for (let i = 0; i < numInvestors; i++) {
-      const address = await instanceCrowdsale.investors.call(i);
-      const tokens = await instanceCrowdsale.investorsTokens.call(address);
-      investorsTokens.push({ address: address, tokens: tokens.toNumber() / divider });
-    }
-
-    this.setState({
-      myTokens: myTokens.toNumber() / divider,
-      tokensCountPreICO: tokensCountPreICO.toNumber() / divider,
-      tokensCountICO: tokensCountICO.toNumber() / divider,
-      numInvestors: numInvestors.toNumber(),
-      investorsTokens: investorsTokens,
-
-      // Round information
-      roundNumber: currentRound[0].toNumber(),
-      roundStart: new Date(currentRound[1] * 1000).toLocaleString(),
-      roundRate: currentRound[2].toNumber() / divider,
-      roundRemaining: currentRound[3].toNumber() / divider
-    });
+    this.updateState();
   }
 
   async manualSendTokensWithBonus() {
     const {
-      web3, instanceCrowdsale, instanceToken, divider,
+      web3, instanceCrowdsale, divider,
       investorAddressWithBonus, investorTokensWithBonus, investorBonuses
     } = this.state;
 
@@ -272,50 +260,27 @@ class App extends Component {
       { from: web3.eth.accounts[0], gas: 200000 }
     );
 
-    // Fields update
-    const [myTokens, tokensCountPreICO, tokensCountICO, numInvestors, currentRound] = await Promise.all([
-      instanceToken.balanceOf(web3.eth.accounts[0]), instanceCrowdsale.tokensCountPreICO.call(),
-      instanceCrowdsale.tokensCountICO.call(), instanceCrowdsale.getAllInvestors.call(),
-      instanceCrowdsale.currentRound.call()
-    ]);
-
-    // Get info about investors
-    let investorsTokens = [];
-    for (let i = 0; i < numInvestors; i++) {
-      const address = await instanceCrowdsale.investors.call(i);
-      const tokens = await instanceCrowdsale.investorsTokens.call(address);
-      investorsTokens.push({ address: address, tokens: tokens.toNumber() / divider });
-    }
-
-    this.setState({
-      myTokens: myTokens.toNumber() / divider,
-      tokensCountPreICO: tokensCountPreICO.toNumber() / divider,
-      tokensCountICO: tokensCountICO.toNumber() / divider,
-      numInvestors: numInvestors.toNumber(),
-      investorsTokens: investorsTokens,
-
-      // Round information
-      roundNumber: currentRound[0].toNumber(),
-      roundStart: new Date(currentRound[1] * 1000).toLocaleString(),
-      roundRate: currentRound[2].toNumber() / divider,
-      roundRemaining: currentRound[3].toNumber() / divider
-    });
+    this.updateState();
   }
 
   async refund() {
     const { web3, instanceCrowdsale } = this.state;
     await instanceCrowdsale.refund({ from: web3.eth.accounts[0] });
+
     console.log('refund');
+    this.updateState();
   }
 
   async burn() {
     const { web3, instanceCrowdsale } = this.state;
     await instanceCrowdsale.burnTokens({ from: web3.eth.accounts[0] });
+
     console.log('burn');
+    this.updateState();
   }
 
   clearTimestamp() {
-    this.setState({ timestamp: 0 });
+    this.setState({ investorTimestamp: 0 });
   }
 
   tabChange = (tab) => {
@@ -338,7 +303,7 @@ class App extends Component {
                   <Row><Col><label>Address</label></Col></Row>
                   <Row className='form-group'>
                     <Col>
-                      <Input disabled={true} value={this.state.myAddress} />
+                      <Input disabled={true} value={this.state.myAddress}/>
                     </Col>
                   </Row>
                   <Row>
@@ -416,7 +381,7 @@ class App extends Component {
               </Row>
               <Row>
                 <Col>
-                  <h4>Manual send tokens to Investor</h4>
+                  <h4>Manual send tokens to investor</h4>
                   <hr className='my-2'/>
                 </Col>
               </Row>
@@ -461,7 +426,7 @@ class App extends Component {
                           <Col md={{ size: 6, pull: 1 }} style={{ display: 'flex' }}>
                             <Input
                               readOnly
-                              value={this.state.timestamp === 0 ? '' : moment(this.state.timestamp).format('llll')}
+                              value={this.state.investorTimestamp === 0 ? '' : moment(this.state.investorTimestamp).format('llll')}
                               onFocus={() => this.showDatePicker('manual')}
                               onKeyDown={this.handleSubmit}
                               className='form-control-sm'
@@ -685,7 +650,7 @@ class App extends Component {
               </Row>
               <Row className='form-group'>
                 <Col>
-                  <label><strong>Transfer Ownership (owner)</strong></label>
+                  <label><strong>Transfer ownership (owner)</strong></label>
                   <Input
                     value={this.state.newOwner}
                     onChange={e => this.setState({ newOwner: e.target.value })}

@@ -15,6 +15,7 @@ contract Crowdsale is Ownable {
   struct Round {
     uint number;
     uint start;
+    uint rate;
     uint remaining;
     uint reserveBounty;
     uint reserveTeam;
@@ -35,7 +36,6 @@ contract Crowdsale is Ownable {
   uint public startICO;    // 01.12.2017 12:00 UTC+2 --> 1512122400
   uint public endICO;      // 15.01.2018 00:00 UTC+2 --> 1515967200
 
-  uint public rate = 50;                            // 0.5 USD
   uint public constant minInvestmentPreICO = 20000; // 200 USD
   uint public constant minInvestmentICO = 5000;     // 50 USD
   uint public currentRateUSD = 30000;               // 300 USD = 1 ether
@@ -59,6 +59,7 @@ contract Crowdsale is Ownable {
     currentRound = Round({
       number: 1,
       start: _startPreICO,
+      rate: 50, // 0.5 USD
       remaining: maximumSoldTokens,
       reserveBounty: 0,
       reserveTeam: 0
@@ -74,30 +75,19 @@ contract Crowdsale is Ownable {
   }
 
   function createPreIcoTokens() preIcoOn payable {
-    uint valueUSD = msg.value.mul(decimals).mul(currentRateUSD).div(1 ether);
+    uint valueUSD = msg.value.mul(currentRateUSD).div(1 ether);
     uint remainderTokens = maxCapPreICO.sub(tokensCountPreICO);
 
     if (valueUSD >= minInvestmentPreICO && remainderTokens > 0) {
-      uint surrender;
       uint totalValue = msg.value;
 
-      // Check for surrender by rate
-      uint surrenderUSD = valueUSD.mod(rate);
-      if (surrenderUSD > 0) {
-        surrender = surrenderUSD.mul(1 ether).div(currentRateUSD);
-
-        msg.sender.transfer(surrender);
-        TransferWei(msg.sender, surrender);
-        totalValue = totalValue.sub(surrender);
-      }
-
-      uint tokens = valueUSD.sub(surrenderUSD).div(rate);
+      uint tokens = valueUSD.mul(decimals).div(currentRound.rate);
       uint tokensWithBonus = tokens + tokens >> 1;
 
       // Check for surrender by remaining tokens
       if (tokens > remainderTokens) {
         uint overTokens = tokens.sub(remainderTokens);
-        surrender = overTokens.mul(rate).mul(1 ether).div(decimals).div(currentRateUSD);
+        uint surrender = overTokens.mul(currentRound.rate).mul(1 ether).div(decimals).div(currentRateUSD);
 
         msg.sender.transfer(surrender);
         TransferWei(msg.sender, surrender);
@@ -169,27 +159,17 @@ contract Crowdsale is Ownable {
     require(now > currentRound.start);
 
     ethDistribution();
-    uint valueUSD = msg.value.mul(decimals).mul(currentRateUSD).div(1 ether);
+    uint valueUSD = msg.value.mul(currentRateUSD).div(1 ether);
     if (valueUSD >= minInvestmentICO && currentRound.remaining > 0) {
       uint totalValue = msg.value;
 
-      // Check for surrender by rate
-      uint surrenderUSD = valueUSD.mod(rate);
-      if (surrenderUSD > 0) {
-        uint surrender = surrenderUSD.mul(1 ether).div(currentRateUSD);
-
-        msg.sender.transfer(surrender);
-        TransferWei(msg.sender, surrender);
-        totalValue = totalValue.sub(surrender);
-      }
-
-      uint tokens = valueUSD.sub(surrenderUSD).mul(decimals).div(rate);
+      uint tokens = valueUSD.mul(decimals).div(currentRound.rate);
       uint tokensWithBonus = tokens + bonusCalculationICO(tokens);
 
       // Check for surrender by remaining tokens
       if (tokens > currentRound.remaining) {
         uint overTokens = tokens.sub(currentRound.remaining);
-        surrender = overTokens.mul(rate).mul(1 ether).div(decimals).div(currentRateUSD);
+        uint surrender = overTokens.mul(currentRound.rate).mul(1 ether).div(decimals).div(currentRateUSD);
 
         msg.sender.transfer(surrender);
         TransferWei(msg.sender, surrender);
@@ -211,36 +191,47 @@ contract Crowdsale is Ownable {
     }
   }
 
+  function countingTokens(address _addr, uint _tokens) internal {
+    if (now < startICO) {
+      tokensCountPreICO = tokensCountPreICO.add(_tokens);
+    } else {
+      tokensCountICO = tokensCountICO.add(_tokens);
+    }
+    currentRound.remaining = currentRound.remaining.sub(_tokens);
+    calculationNumberInvestors(_addr, _tokens);
+    token.transfer(_addr, _tokens);
+  }
+
   function sendToAddress(address _address, uint _tokens, uint _time) onlyOwner {
     uint time = _time > 0 ? _time : now;
     require(startPreICO < time && time < endICO);
 
-    uint tempTokens = _tokens.mul(decimals);
-    uint tokensWithBonus = tempTokens + (time < startICO ? tempTokens >> 1 : bonusCalculationICO(tempTokens));
-    uint remainderTokens = token.balanceOf(this);
+    uint tokensWithBonus = _tokens + (time < startICO ? _tokens >> 1 : bonusCalculationICO(_tokens));
+    uint remainderTokens = currentRound.remaining;
     uint totalTokens = tokensWithBonus > remainderTokens ? remainderTokens : tokensWithBonus;
-    calculationNumberInvestors(_address, totalTokens);
-    token.transfer(_address, totalTokens);
+
+    countingTokens(_address, totalTokens);
   }
 
   function sendToAddressWithBonus(address _address, uint _tokens, uint _bonus) onlyOwner {
-    require(_tokens > 0 || _bonus > 0);
+    require(_tokens > 0 || _bonus > 0 && startPreICO < now && now < endICO + 5 days);
 
-    uint tempTokens = _tokens.add(_bonus).mul(decimals);
-    uint remainderTokens = token.balanceOf(this);
+    uint tempTokens = _tokens.add(_bonus);
+    uint remainderTokens = currentRound.remaining;
     uint totalTokens = tempTokens > remainderTokens ? remainderTokens : tempTokens;
-    calculationNumberInvestors(_address, totalTokens);
-    token.transfer(_address, totalTokens);
+
+    countingTokens(_address, totalTokens);
   }
 
   function startingNewRound(uint _start, uint _rate) onlyOwner {
-    require(_start > startICO && _start < endICO && _rate > 0 && currentRound.remaining == 0);
+    require(_start > startICO && _start < endICO && _start > now && _rate > 0 && currentRound.remaining == 0);
 
     uint numberRounds = token.initialSupply().div(1E9); // 10 000 000 tokens
     if (currentRound.number < numberRounds) {
       currentRound.number = currentRound.number.add(1);
       currentRound.start = _start;
-      currentRound.remaining = maximumSoldTokens;                            // remainder
+      currentRound.rate = _rate;
+      currentRound.remaining = maximumSoldTokens;                              // remainder
       currentRound.reserveBounty = currentRound.reserveBounty.add(203873500);  // 2% of sold tokens
       currentRound.reserveTeam = currentRound.reserveTeam.add(713557600);      // 7% of sold tokens
     }

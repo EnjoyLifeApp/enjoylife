@@ -74,18 +74,10 @@ class App extends Component {
       // Crowdsale initialization
       crowdsale.setProvider(web3.currentProvider);
       const instance = await crowdsale.deployed();
-      const [
-        owner, tokenAddress, startPreICO,
-        startICO, endICO, usdRate,
-        minInvestmentPreICO, minInvestmentICO, currentRound,
-        tokensCountPreICO, tokensCountICO, numInvestors,
-        minCapICO, myInvestments
-      ] = await Promise.all([
-        instance.owner.call(), instance.token.call(), instance.startPreICO.call(),
-        instance.startICO.call(), instance.endICO.call(), instance.currentRateUSD.call(),
-        instance.minInvestmentPreICO.call(), instance.minInvestmentICO.call(),
-        instance.currentRound.call(), instance.tokensCountPreICO.call(), instance.tokensCountICO.call(),
-        instance.getAllInvestors.call(), instance.minCapICO.call(), instance.balancesICO.call(web3.eth.accounts[0])
+      const [tokenAddress, startPreICO, startICO, endICO, minInvestmentPreICO, minInvestmentICO, minCapICO] = await Promise.all([
+        instance.token.call(), instance.startPreICO.call(), instance.startICO.call(),
+        instance.endICO.call(), instance.minInvestmentPreICO.call(), instance.minInvestmentICO.call(),
+        instance.minCapICO.call()
       ]);
 
       // Enjoy life token initialization
@@ -94,35 +86,12 @@ class App extends Component {
       enjoyLifeCoinToken.setProvider(web3.currentProvider);
       const instanceToken = enjoyLifeCoinToken.at(tokenAddress);
 
-      const [tokenName, tokenSymbol, decimals, initialSupply, myTokens] = await Promise.all([
+      const [tokenName, tokenSymbol, decimals, initialSupply] = await Promise.all([
         instanceToken.name.call(), instanceToken.symbol.call(),
-        instanceToken.decimals.call(), instanceToken.initialSupply.call(),
-        instanceToken.balanceOf(web3.eth.accounts[0])
+        instanceToken.decimals.call(), instanceToken.initialSupply.call()
       ]);
       const decimalsNum = decimals.toNumber();
       const divider = Math.pow(10, decimalsNum);
-
-      // Get info about investors
-      let investorsTokens = [];
-      for (let i = 0; i < numInvestors; i++) {
-        const address = await instance.investors.call(i);
-        const tokens = await instance.investorsTokens.call(address);
-        investorsTokens.push({ address: address, tokens: tokens.toNumber() / divider });
-      }
-
-      // Сheck the possibility of refund and burn
-      // Refund: require(now > endICO && (tokensCountPreICO + tokensCountICO) < minCapICO);
-      // Burn: require(now > endICO + 5 days && (tokensCountPreICO + tokensCountICO) > minCapICO);
-      const refund = moment() > moment.unix(endICO) && (tokensCountPreICO + tokensCountICO) < minCapICO ? false : true;
-      const burn = moment() > moment.unix(endICO).add(5, 'days') && (tokensCountPreICO + tokensCountICO) > minCapICO ? false : true;
-
-      // Check the start of a new round (remaining tokens)
-      // require(_start > startICO && _start < endICO && _start > now && _rate > 0 && currentRound.remaining == 0);
-      const newRound = currentRound[3].toNumber() === 0 ? false : true;
-
-      // Check the possibility of distributing tokens after the completion of the ICO
-      // require(now > endICO && (tokensCountPreICO + tokensCountICO) > minCapICO);
-      const distribute = moment() > moment.unix(endICO) && (tokensCountPreICO + tokensCountICO) > minCapICO ? false : true;
 
       this.setState({
         // Information on contracts
@@ -140,53 +109,34 @@ class App extends Component {
 
         // Information on the crowdsale
         crowdsaleAddress: crowdsale.address,
-        owner: owner,
         startPreICO: startPreICO,
         startICO: startICO,
         endICO: endICO,
-        usdRate: usdRate.toNumber() / divider,
         minInvestmentPreICO: minInvestmentPreICO.toNumber() / divider,
         minInvestmentICO: minInvestmentICO.toNumber() / divider,
-
-        // Button status
-        refund: refund,
-        burn: burn,
-        newRound: newRound,
-        distribute: distribute,
-
-        // Round information
-        roundNumber: currentRound[0].toNumber(),
-        roundStart: new Date(currentRound[1] * 1000).toLocaleString(),
-        roundRate: currentRound[2].toNumber() / divider,
-        roundRemaining: currentRound[3].toNumber() / divider,
-
-        // My info
-        myAddress: web3.eth.accounts[0],
-        myTokens: myTokens.toNumber() / divider,
-        myInvestments: web3.fromWei(myInvestments.toNumber(), 'ether'),
-
-        // Statistics
-        tokensCountPreICO: tokensCountPreICO.toNumber() / divider,
-        tokensCountICO: tokensCountICO.toNumber() / divider,
-        numInvestors: numInvestors.toNumber(),
-        investorsTokens: investorsTokens
+        minCapICO: minCapICO
       });
 
-      this.checkStatus();
+      this.updateState();
     } catch (error) {
       console.log(error);
     }
   }
 
   async updateState() {
-    const { web3, instanceCrowdsale, instanceToken, divider } = this.state;
+    const { web3, instanceCrowdsale, instanceToken, divider, minCapICO } = this.state;
 
     // Fields update
-    const [myTokens, tokensCountPreICO, tokensCountICO, numInvestors, currentRound, endICO, minCapICO, myInvestments] = await Promise.all([
+    const [
+      myTokens, tokensCountPreICO, tokensCountICO,
+      numInvestors, currentRound, endICO,
+      myInvestments, owner, usdRate
+    ] = await Promise.all([
       instanceToken.balanceOf(web3.eth.accounts[0]), instanceCrowdsale.tokensCountPreICO.call(),
       instanceCrowdsale.tokensCountICO.call(), instanceCrowdsale.getAllInvestors.call(),
       instanceCrowdsale.currentRound.call(), instanceCrowdsale.endICO.call(),
-      instanceCrowdsale.minCapICO.call(), instanceCrowdsale.balancesICO.call(web3.eth.accounts[0])
+      instanceCrowdsale.balancesICO.call(web3.eth.accounts[0]),
+      instanceCrowdsale.owner.call(), instanceCrowdsale.currentRateUSD.call()
     ]);
 
     // Get info about investors
@@ -200,8 +150,8 @@ class App extends Component {
     // Сheck the possibility of refund and burn
     // Refund: require(now > endICO && (tokensCountPreICO + tokensCountICO) < minCapICO);
     // Burn: require(now > endICO + 5 days && (tokensCountPreICO + tokensCountICO) > minCapICO);
-    const refund = moment() > moment.unix(endICO) && (tokensCountPreICO + tokensCountICO) < minCapICO ? false : true;
-    const burn = moment() > moment.unix(endICO).add(5, 'days') && (tokensCountPreICO + tokensCountICO) > minCapICO ? false : true;
+    const refund = moment() > moment.unix(endICO) && (tokensCountPreICO.toNumber() + tokensCountICO.toNumber()) < minCapICO.toNumber();
+    const burn = moment() > moment.unix(endICO).add(5, 'days') && (tokensCountPreICO.toNumber() + tokensCountICO.toNumber()) > minCapICO.toNumber();
 
     // Check the start of a new round (remaining tokens)
     // require(_start > startICO && _start < endICO && _start > now && _rate > 0 && currentRound.remaining == 0);
@@ -209,21 +159,28 @@ class App extends Component {
 
     // Check the possibility of distributing tokens after the completion of the ICO
     // require(now > endICO && (tokensCountPreICO + tokensCountICO) > minCapICO);
-    const distribute = moment() > moment.unix(endICO) && (tokensCountPreICO + tokensCountICO) > minCapICO ? false : true;
+    const distribute = moment() > moment.unix(endICO) && (tokensCountPreICO.toNumber() + tokensCountICO.toNumber()) > minCapICO.toNumber();
 
     this.setState({
-      myTokens: myTokens.toNumber() / divider,
-      myInvestments: web3.fromWei(myInvestments.toNumber(), 'ether'),
+      owner: owner,
+      usdRate: usdRate.toNumber() / divider,
+
+      // Statistics
       tokensCountPreICO: tokensCountPreICO.toNumber() / divider,
       tokensCountICO: tokensCountICO.toNumber() / divider,
       numInvestors: numInvestors.toNumber(),
       investorsTokens: investorsTokens,
 
+      // My info
+      myAddress: web3.eth.accounts[0],
+      myTokens: myTokens.toNumber() / divider,
+      myInvestments: web3.fromWei(myInvestments.toNumber(), 'ether'),
+
       // Button status
-      refund: refund,
-      burn: burn,
+      refund: refund ? false : true,
+      burn: burn ? false : true,
       newRound: newRound,
-      distribute: distribute,
+      distribute: distribute ? false : true,
 
       // Round information
       roundNumber: currentRound[0].toNumber(),
@@ -620,8 +577,8 @@ class App extends Component {
                     <Col md={{ size: 4 }} style={{ textAlign: 'end' }}>{this.state.minInvestmentICO}$</Col>
                   </Row>
                   <Row>
-                    <Col md={{ size: 6 }}><label>Status</label></Col>
-                    <Col md={{ size: 6 }} style={{ textAlign: 'end', fontWeight: 'bolder' }}>{this.state.status}</Col>
+                    <Col md={{ size: 4 }}><label>Status</label></Col>
+                    <Col md={{ size: 8 }} style={{ textAlign: 'end', fontWeight: 'bolder' }}>{this.state.status}</Col>
                   </Row>
                   <Row>
                     <Col md={{ size: 8 }}><label>Left tokens in the current round</label></Col>

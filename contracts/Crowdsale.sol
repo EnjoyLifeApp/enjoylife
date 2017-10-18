@@ -9,7 +9,7 @@ contract Crowdsale is Ownable {
 
   EnjoyLifeCoinToken public token = new EnjoyLifeCoinToken();
 
-  enum DistributionStages { initial, minCapMet, threeMillions, fiveMillions, sevenMillions, finishes }
+  enum DistributionStages { initial, minCapMet, threeMillions, fiveMillions, sevenMillions }
   DistributionStages public currentStage = DistributionStages.initial;
 
   struct Round {
@@ -31,6 +31,7 @@ contract Crowdsale is Ownable {
   address[] public investors;
   mapping(address => uint) public balancesICO;
   uint public getBalanceContract;
+  uint burnTime;
 
   uint public startPreICO; // 01.11.2017 12:00 UTC+2 --> 1509530400
   uint public startICO;    // 01.12.2017 12:00 UTC+2 --> 1512122400
@@ -51,15 +52,16 @@ contract Crowdsale is Ownable {
 
   event TransferWei(address indexed addr, uint amount);
 
-  function Crowdsale(uint _startPreICO, uint _startICO, uint _endICO) {
+  function Crowdsale(uint _startPreICO, uint _startICO, uint _endICO, uint _rate, uint _burnTime) {
     startPreICO = _startPreICO;
     startICO = _startICO;
     endICO = _endICO;
+    burnTime = _burnTime;
 
     currentRound = Round({
       number: 1,
       start: _startPreICO,
-      rate: 50, // 0.5 USD
+      rate: _rate,
       remaining: maximumSoldTokens,
       reserveBounty: 0,
       reserveTeam: 0
@@ -82,7 +84,7 @@ contract Crowdsale is Ownable {
       uint totalValue = msg.value;
 
       uint tokens = valueUSD.mul(decimals).div(currentRound.rate);
-      uint tokensWithBonus = tokens.add(tokens >> 1);
+      uint tokensWithBonus = tokens.add(tokens >> 1); // + 50% tokens
 
       // Check for surrender by remaining tokens
       if (tokens > remainderTokens) {
@@ -117,7 +119,7 @@ contract Crowdsale is Ownable {
 
   function distribute() internal {
     uint total = this.balance;
-    uint otherValue = total >> 2;                                 // 50% eth
+    uint otherValue = total >> 1;                                 // 50% eth
     uint feeValue = total.div(20);                                // 5% eth
     uint projectTeamValue = total.sub(otherValue).sub(feeValue);  // 45% eth
     feeAccount.transfer(feeValue);
@@ -130,16 +132,14 @@ contract Crowdsale is Ownable {
 
   function ethDistribution() internal {
     uint total = tokensCountPreICO + tokensCountICO;
-    if (currentStage == DistributionStages.initial && total >= minCapICO) {
-      currentStage = DistributionStages.minCapMet; distribute();
-    } else if (currentStage == DistributionStages.minCapMet && total >= 3E8) {     // 3 000 000 tokens
-      currentStage = DistributionStages.threeMillions; distribute();
-    } else if (currentStage == DistributionStages.threeMillions && total >= 5E8) { // 5 000 000 tokens
-      currentStage = DistributionStages.fiveMillions; distribute();
-    } else if (currentStage == DistributionStages.fiveMillions && total >= 7E8) {  // 7 000 000 tokens
+    if (total >= 7E8 && currentStage < DistributionStages.sevenMillions) {           // 7 000 000 tokens
       currentStage = DistributionStages.sevenMillions; distribute();
-    } else if (currentStage == DistributionStages.sevenMillions && total == token.initialSupply()) {
-      currentStage = DistributionStages.finishes; distribute();
+    } else if (total >= 5E8 && currentStage < DistributionStages.fiveMillions) {     // 5 000 000 tokens
+      currentStage = DistributionStages.fiveMillions; distribute();
+    } else if (total >= 3E8 && currentStage < DistributionStages.threeMillions) {    // 3 000 000 tokens
+      currentStage = DistributionStages.threeMillions; distribute();
+    } else if (total >= minCapICO && currentStage == DistributionStages.initial) {
+      currentStage = DistributionStages.minCapMet; distribute();
     }
   }
 
@@ -151,20 +151,19 @@ contract Crowdsale is Ownable {
 
   function bonusCalculationICO(uint _tokens) internal returns(uint) {
     if (now > startICO + 12 days) {} else if (now > startICO + 9 days) {
-      return _tokens.div(20);                // 5% tokens
+      return _tokens.div(20);                // + 5% tokens
     } else if (now > startICO + 6 days) {
-      return _tokens.div(10);                // 10% tokens
+      return _tokens.div(10);                // + 10% tokens
     } else if (now > startICO + 3 days) {
-      return _tokens.mul(15).div(decimals);  // 15% tokens
+      return _tokens.mul(15).div(decimals);  // + 15% tokens
     } else {
-      return _tokens.div(5);                 // 20% tokens
+      return _tokens.div(5);                 // + 20% tokens
     }
   }
 
   function createIcoTokens() icoOn payable {
     require(now > currentRound.start);
 
-    ethDistribution();
     uint valueUSD = msg.value.mul(currentRateUSD).div(1 ether);
     if (valueUSD >= minInvestmentICO && currentRound.remaining > 0) {
       uint totalValue = msg.value;
@@ -192,6 +191,7 @@ contract Crowdsale is Ownable {
       getBalanceContract = getBalanceContract.add(totalValue);
       calculationNumberInvestors(msg.sender, tokensWithBonus);
       token.transfer(msg.sender, tokensWithBonus);
+      ethDistribution();
     } else {
       revert();
     }
@@ -217,6 +217,7 @@ contract Crowdsale is Ownable {
     uint totalTokens = tokensWithBonus > remainderTokens ? remainderTokens : tokensWithBonus;
 
     countingTokens(_address, totalTokens);
+    ethDistribution();
   }
 
   function sendToAddressWithBonus(address _address, uint _tokens, uint _bonus) onlyOwner {
@@ -227,6 +228,7 @@ contract Crowdsale is Ownable {
     uint totalTokens = tempTokens > remainderTokens ? remainderTokens : tempTokens;
 
     countingTokens(_address, totalTokens);
+    ethDistribution();
   }
 
   function startingNewRound(uint _start, uint _rate) onlyOwner {
@@ -252,7 +254,7 @@ contract Crowdsale is Ownable {
   }
 
   function burnTokens() onlyOwner {
-    require(now > endICO + 5 days && (tokensCountPreICO + tokensCountICO) > minCapICO);
+    require(now > endICO + (burnTime * 1 days) && (tokensCountPreICO + tokensCountICO) > minCapICO);
 
     uint soldTokens = maximumSoldTokens.sub(currentRound.remaining);
     bountyAccount.transfer(soldTokens.div(50).add(currentRound.reserveBounty));            // 2% of sold tokens + previous rounds

@@ -22,16 +22,16 @@ contract Crowdsale is Ownable {
   }
   Round public currentRound;
 
-  address feeAccount;         // 0xdA39e0Ce2adf93129D04F53176c7Bfaaae8B051a
-  address bountyAccount;      // 0x0064952457905eBFB9c0292200A74B1d7414F081
-  address projectTeamAccount; // 0x980F0A3fEDc9D5236C787A827ab7c2276227D78d
-  address otherAccount;       // 0x3433974240b95bafc8705074c0859cee92a562f8
+  address feeAccount = 0xdA39e0Ce2adf93129D04F53176c7Bfaaae8B051a;
+  address bountyAccount = 0x0064952457905eBFB9c0292200A74B1d7414F081;
+  address projectTeamAccount = 0x980F0A3fEDc9D5236C787A827ab7c2276227D78d;
+  address otherAccount = 0x3433974240b95bafc8705074c0859cee92a562f8;
 
   mapping(address => uint) public investorsTokens;
   address[] public investors;
   mapping(address => uint) public balancesICO;
   uint public getBalanceContract;
-  uint burnTime;
+  uint public burnTime;
 
   uint public startPreICO; // 01.11.2017 12:00 UTC+2 --> 1509530400
   uint public startICO;    // 01.12.2017 12:00 UTC+2 --> 1512122400
@@ -197,8 +197,8 @@ contract Crowdsale is Ownable {
     }
   }
 
-  function countingTokens(address _addr, uint _tokens) internal {
-    if (now < startICO) {
+  function countingTokens(address _addr, uint _tokens, uint _time) internal {
+    if (_time < startICO) {
       tokensCountPreICO = tokensCountPreICO.add(_tokens);
     } else {
       tokensCountICO = tokensCountICO.add(_tokens);
@@ -212,12 +212,21 @@ contract Crowdsale is Ownable {
     uint time = _time > 0 ? _time : now;
     require(startPreICO < time && time < endICO);
 
-    uint tokensWithBonus = _tokens.add(time < startICO ? _tokens >> 1 : bonusCalculationICO(_tokens));
-    uint remainderTokens = currentRound.remaining;
-    uint totalTokens = tokensWithBonus > remainderTokens ? remainderTokens : tokensWithBonus;
+    uint tokensWithBonus;
+    uint remainderTokens;
+    if (time < startICO) {
+      tokensWithBonus = _tokens.add(_tokens >> 1);
+      remainderTokens = maxCapPreICO.sub(tokensCountPreICO);
+    } else {
+      tokensWithBonus = _tokens.add(bonusCalculationICO(_tokens));
+      remainderTokens = currentRound.remaining;
+    }
 
-    countingTokens(_address, totalTokens);
-    ethDistribution();
+    uint totalTokens = tokensWithBonus > remainderTokens ? remainderTokens : tokensWithBonus;
+    if (totalTokens > 0) {
+      countingTokens(_address, totalTokens, time);
+      ethDistribution();
+    }
   }
 
   function sendToAddressWithBonus(address _address, uint _tokens, uint _bonus) onlyOwner {
@@ -227,7 +236,7 @@ contract Crowdsale is Ownable {
     uint remainderTokens = currentRound.remaining;
     uint totalTokens = tempTokens > remainderTokens ? remainderTokens : tempTokens;
 
-    countingTokens(_address, totalTokens);
+    countingTokens(_address, totalTokens, now);
     ethDistribution();
   }
 
@@ -257,8 +266,9 @@ contract Crowdsale is Ownable {
     require(now > endICO + (burnTime * 1 days) && (tokensCountPreICO + tokensCountICO) > minCapICO);
 
     uint soldTokens = maximumSoldTokens.sub(currentRound.remaining);
-    bountyAccount.transfer(soldTokens.div(50).add(currentRound.reserveBounty));            // 2% of sold tokens + previous rounds
-    projectTeamAccount.transfer(soldTokens.mul(7).div(100).add(currentRound.reserveTeam)); // 7% of sold tokens + previous rounds
+    currentRound.remaining = 0;
+    token.transfer(bountyAccount, soldTokens.div(50).add(currentRound.reserveBounty));            // 2% of sold tokens + previous rounds
+    token.transfer(projectTeamAccount, soldTokens.mul(7).div(100).add(currentRound.reserveTeam)); // 7% of sold tokens + previous rounds
     token.burn(token.balanceOf(this));
   }
 

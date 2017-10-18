@@ -74,10 +74,10 @@ class App extends Component {
       // Crowdsale initialization
       crowdsale.setProvider(web3.currentProvider);
       const instance = await crowdsale.deployed();
-      const [tokenAddress, startPreICO, startICO, endICO, minInvestmentPreICO, minInvestmentICO, minCapICO] = await Promise.all([
+      const [tokenAddress, startPreICO, startICO, endICO, minInvestmentPreICO, minInvestmentICO, minCapICO, burnTime] = await Promise.all([
         instance.token.call(), instance.startPreICO.call(), instance.startICO.call(),
         instance.endICO.call(), instance.minInvestmentPreICO.call(), instance.minInvestmentICO.call(),
-        instance.minCapICO.call()
+        instance.minCapICO.call(), instance.burnTime.call()
       ]);
 
       // Enjoy life token initialization
@@ -114,7 +114,8 @@ class App extends Component {
         endICO: endICO,
         minInvestmentPreICO: minInvestmentPreICO.toNumber() / divider,
         minInvestmentICO: minInvestmentICO.toNumber() / divider,
-        minCapICO: minCapICO
+        minCapICO: minCapICO,
+        burnTime: burnTime.toNumber()
       });
 
       this.updateState();
@@ -124,19 +125,21 @@ class App extends Component {
   }
 
   async updateState() {
-    const { web3, instanceCrowdsale, instanceToken, divider, minCapICO } = this.state;
+    const { web3, instanceCrowdsale, instanceToken, divider, minCapICO, burnTime } = this.state;
 
     // Fields update
     const [
       myTokens, tokensCountPreICO, tokensCountICO,
       numInvestors, currentRound, endICO,
-      myInvestments, owner, usdRate
+      myInvestments, owner, usdRate,
+      notSoldTokens
     ] = await Promise.all([
       instanceToken.balanceOf(web3.eth.accounts[0]), instanceCrowdsale.tokensCountPreICO.call(),
       instanceCrowdsale.tokensCountICO.call(), instanceCrowdsale.getAllInvestors.call(),
       instanceCrowdsale.currentRound.call(), instanceCrowdsale.endICO.call(),
       instanceCrowdsale.balancesICO.call(web3.eth.accounts[0]),
-      instanceCrowdsale.owner.call(), instanceCrowdsale.currentRateUSD.call()
+      instanceCrowdsale.owner.call(), instanceCrowdsale.currentRateUSD.call(),
+      instanceCrowdsale.getTokens.call()
     ]);
 
     // Get info about investors
@@ -151,7 +154,7 @@ class App extends Component {
     // Refund: require(now > endICO && (tokensCountPreICO + tokensCountICO) < minCapICO);
     // Burn: require(now > endICO + 5 days && (tokensCountPreICO + tokensCountICO) > minCapICO);
     const refund = moment() > moment.unix(endICO) && (tokensCountPreICO.toNumber() + tokensCountICO.toNumber()) < minCapICO.toNumber();
-    const burn = moment() > moment.unix(endICO).add(5, 'days') && (tokensCountPreICO.toNumber() + tokensCountICO.toNumber()) > minCapICO.toNumber();
+    const burn = moment() > moment.unix(endICO).add(burnTime, 'days') && (tokensCountPreICO.toNumber() + tokensCountICO.toNumber()) > minCapICO.toNumber();
 
     // Check the start of a new round (remaining tokens)
     // require(_start > startICO && _start < endICO && _start > now && _rate > 0 && currentRound.remaining == 0);
@@ -166,6 +169,7 @@ class App extends Component {
       usdRate: usdRate.toNumber() / divider,
 
       // Statistics
+      notSoldTokens: notSoldTokens.toNumber() / divider,
       tokensCountPreICO: tokensCountPreICO.toNumber() / divider,
       tokensCountICO: tokensCountICO.toNumber() / divider,
       numInvestors: numInvestors.toNumber(),
@@ -609,7 +613,7 @@ class App extends Component {
                 <Col>
                   <label><strong>After the completion of the ICO</strong></label>
                   <Row>
-                    <Col md={{ size: 4 }}>
+                    <Col style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <MuiThemeProvider muiTheme={lightMuiTheme}>
                         <RaisedButton
                           label='Refund'
@@ -619,8 +623,6 @@ class App extends Component {
                           style={{ width: 120 }}
                         />
                       </MuiThemeProvider>
-                    </Col>
-                    <Col md={{ size: 4 }}>
                       <MuiThemeProvider muiTheme={lightMuiTheme}>
                         <RaisedButton
                           label='Distribute'
@@ -630,8 +632,6 @@ class App extends Component {
                           style={{ width: 120 }}
                         />
                       </MuiThemeProvider>
-                    </Col>
-                    <Col md={{ size: 4 }}>
                       <MuiThemeProvider muiTheme={lightMuiTheme}>
                         <RaisedButton
                           label='Burn'
@@ -656,6 +656,10 @@ class App extends Component {
                   </Row>
                   <Row>
                     <Col md={{ size: 8 }}>
+                      <Row>
+                        <Col><label>Number of not sold tokens</label></Col>
+                        <Col>{this.state.notSoldTokens}</Col>
+                      </Row>
                       <Row>
                         <Col><label>Number of tokens sold at pre-ICO</label></Col>
                         <Col>{this.state.tokensCountPreICO}</Col>

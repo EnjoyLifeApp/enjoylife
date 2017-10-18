@@ -57,9 +57,12 @@ class App extends Component {
       newOwner: '',
 
       // Other
+      myInvestments: 0,
       amount: '',
       tab: 'a',
-      status: 'Unknown'
+      status: 'Unknown',
+      refund: false,
+      burn: false
     }
   }
 
@@ -75,13 +78,14 @@ class App extends Component {
         owner, tokenAddress, startPreICO,
         startICO, endICO, usdRate,
         minInvestmentPreICO, minInvestmentICO, currentRound,
-        tokensCountPreICO, tokensCountICO, numInvestors
+        tokensCountPreICO, tokensCountICO, numInvestors,
+        minCapICO, myInvestments
       ] = await Promise.all([
         instance.owner.call(), instance.token.call(), instance.startPreICO.call(),
         instance.startICO.call(), instance.endICO.call(), instance.currentRateUSD.call(),
         instance.minInvestmentPreICO.call(), instance.minInvestmentICO.call(),
         instance.currentRound.call(), instance.tokensCountPreICO.call(), instance.tokensCountICO.call(),
-        instance.getAllInvestors.call()
+        instance.getAllInvestors.call(), instance.minCapICO.call(), instance.balancesICO.call(web3.eth.accounts[0])
       ]);
 
       // Enjoy life token initialization
@@ -106,6 +110,20 @@ class App extends Component {
         investorsTokens.push({ address: address, tokens: tokens.toNumber() / divider });
       }
 
+      // Сheck the possibility of refund and burn
+      // Refund: require(now > endICO && (tokensCountPreICO + tokensCountICO) < minCapICO);
+      // Burn: require(now > endICO + 5 days && (tokensCountPreICO + tokensCountICO) > minCapICO);
+      const refund = moment() > moment.unix(endICO) && (tokensCountPreICO + tokensCountICO) < minCapICO ? false : true;
+      const burn = moment() > moment.unix(endICO).add(5, 'days') && (tokensCountPreICO + tokensCountICO) > minCapICO ? false : true;
+
+      // Check the start of a new round (remaining tokens)
+      // require(_start > startICO && _start < endICO && _start > now && _rate > 0 && currentRound.remaining == 0);
+      const newRound = currentRound[3].toNumber() === 0 ? false : true;
+
+      // Check the possibility of distributing tokens after the completion of the ICO
+      // require(now > endICO && (tokensCountPreICO + tokensCountICO) > minCapICO);
+      const distribute = moment() > moment.unix(endICO) && (tokensCountPreICO + tokensCountICO) > minCapICO ? false : true;
+
       this.setState({
         // Information on contracts
         web3: web3,
@@ -123,12 +141,18 @@ class App extends Component {
         // Information on the crowdsale
         crowdsaleAddress: crowdsale.address,
         owner: owner,
-        startPreICO: new Date(startPreICO * 1000).toLocaleString(),
-        startICO: new Date(startICO * 1000).toLocaleString(),
-        endICO: new Date(endICO * 1000).toLocaleString(),
+        startPreICO: startPreICO,
+        startICO: startICO,
+        endICO: endICO,
         usdRate: usdRate.toNumber() / divider,
         minInvestmentPreICO: minInvestmentPreICO.toNumber() / divider,
         minInvestmentICO: minInvestmentICO.toNumber() / divider,
+
+        // Button status
+        refund: refund,
+        burn: burn,
+        newRound: newRound,
+        distribute: distribute,
 
         // Round information
         roundNumber: currentRound[0].toNumber(),
@@ -139,6 +163,7 @@ class App extends Component {
         // My info
         myAddress: web3.eth.accounts[0],
         myTokens: myTokens.toNumber() / divider,
+        myInvestments: web3.fromWei(myInvestments.toNumber(), 'ether'),
 
         // Statistics
         tokensCountPreICO: tokensCountPreICO.toNumber() / divider,
@@ -146,6 +171,8 @@ class App extends Component {
         numInvestors: numInvestors.toNumber(),
         investorsTokens: investorsTokens
       });
+
+      this.checkStatus();
     } catch (error) {
       console.log(error);
     }
@@ -155,10 +182,11 @@ class App extends Component {
     const { web3, instanceCrowdsale, instanceToken, divider } = this.state;
 
     // Fields update
-    const [myTokens, tokensCountPreICO, tokensCountICO, numInvestors, currentRound] = await Promise.all([
+    const [myTokens, tokensCountPreICO, tokensCountICO, numInvestors, currentRound, endICO, minCapICO, myInvestments] = await Promise.all([
       instanceToken.balanceOf(web3.eth.accounts[0]), instanceCrowdsale.tokensCountPreICO.call(),
       instanceCrowdsale.tokensCountICO.call(), instanceCrowdsale.getAllInvestors.call(),
-      instanceCrowdsale.currentRound.call()
+      instanceCrowdsale.currentRound.call(), instanceCrowdsale.endICO.call(),
+      instanceCrowdsale.minCapICO.call(), instanceCrowdsale.balancesICO.call(web3.eth.accounts[0])
     ]);
 
     // Get info about investors
@@ -169,12 +197,33 @@ class App extends Component {
       investorsTokens.push({ address: address, tokens: tokens.toNumber() / divider });
     }
 
+    // Сheck the possibility of refund and burn
+    // Refund: require(now > endICO && (tokensCountPreICO + tokensCountICO) < minCapICO);
+    // Burn: require(now > endICO + 5 days && (tokensCountPreICO + tokensCountICO) > minCapICO);
+    const refund = moment() > moment.unix(endICO) && (tokensCountPreICO + tokensCountICO) < minCapICO ? false : true;
+    const burn = moment() > moment.unix(endICO).add(5, 'days') && (tokensCountPreICO + tokensCountICO) > minCapICO ? false : true;
+
+    // Check the start of a new round (remaining tokens)
+    // require(_start > startICO && _start < endICO && _start > now && _rate > 0 && currentRound.remaining == 0);
+    const newRound = currentRound[3].toNumber() === 0 ? false : true;
+
+    // Check the possibility of distributing tokens after the completion of the ICO
+    // require(now > endICO && (tokensCountPreICO + tokensCountICO) > minCapICO);
+    const distribute = moment() > moment.unix(endICO) && (tokensCountPreICO + tokensCountICO) > minCapICO ? false : true;
+
     this.setState({
       myTokens: myTokens.toNumber() / divider,
+      myInvestments: web3.fromWei(myInvestments.toNumber(), 'ether'),
       tokensCountPreICO: tokensCountPreICO.toNumber() / divider,
       tokensCountICO: tokensCountICO.toNumber() / divider,
       numInvestors: numInvestors.toNumber(),
       investorsTokens: investorsTokens,
+
+      // Button status
+      refund: refund,
+      burn: burn,
+      newRound: newRound,
+      distribute: distribute,
 
       // Round information
       roundNumber: currentRound[0].toNumber(),
@@ -182,6 +231,23 @@ class App extends Component {
       roundRate: currentRound[2].toNumber() / divider,
       roundRemaining: currentRound[3].toNumber() / divider
     });
+
+    this.checkStatus();
+  }
+
+  checkStatus() {
+    const { startPreICO, startICO, endICO, refund } = this.state;
+    let status = '';
+    if (moment() < moment.unix(startPreICO)) {
+      status = 'Waiting for pre-ICO to start';
+    } else if (moment() < moment.unix(startICO)) {
+      status = 'Pre-ICO in progress';
+    } else if (moment() < moment.unix(endICO)) {
+      status = 'ICO in progress';
+    } else {
+      status = refund ? 'ICO completed!' : 'ICO has failed!';
+    }
+    this.setState({ status: status });
   }
 
   showDatePicker(f) {
@@ -214,8 +280,8 @@ class App extends Component {
         console.error(error);
       } else {
         console.log('Tx:', tx);
-        this.updateState();
       }
+      this.updateState();
     });
   }
 
@@ -279,6 +345,14 @@ class App extends Component {
     this.updateState();
   }
 
+  async manualDistribute() {
+    const { web3, instanceCrowdsale } = this.state;
+    await instanceCrowdsale.manualDistribute({ from: web3.eth.accounts[0] });
+
+    console.log('distribute');
+    this.updateState();
+  }
+
   clearTimestamp() {
     this.setState({ investorTimestamp: 0 });
   }
@@ -287,16 +361,217 @@ class App extends Component {
     this.setState({ tab: tab });
   };
 
+  renderManualSender() {
+    const { myAddress, owner } = this.state;
+    if ( owner.length > 0 && myAddress === owner) {
+      return (
+        <div>
+          <Row>
+            <Col>
+              <h4>Manual send tokens to investor</h4>
+              <hr className='my-2'/>
+            </Col>
+          </Row>
+          <Row>
+            <Col>
+              <MuiThemeProvider muiTheme={lightMuiTheme}>
+                <Tabs onChange={this.tabChange}>
+                  <Tab label='Transfer tokens'>
+                    <Row className='form-group' style={{ marginTop: '20px' }}>
+                      <Col md={{ size: 4 }} style={{ display: 'flex' }}>
+                        <div className='mylabel'>Investor address</div>
+                        <div style={{ color: 'red', marginLeft: '5px' }}>*</div>
+                      </Col>
+                      <Col md={{ size: 6, pull: 1 }}>
+                        <Input
+                          value={this.state.investorAddressWithTime}
+                          onChange={e => this.setState({ investorAddressWithTime: e.target.value })}
+                          onKeyDown={this.handleSubmit}
+                          placeholder='e.g. 0xc52a46cfba7ac9a9af0b24682595ab3359430f81'
+                          className='form-control-sm'
+                        />
+                      </Col>
+                    </Row>
+                    <Row className='form-group'>
+                      <Col md={{ size: 4 }} style={{ display: 'flex' }}>
+                        <div className='mylabel'>Amount tokens</div>
+                        <div style={{ color: 'red', marginLeft: '5px' }}>*</div>
+                      </Col>
+                      <Col md={{ size: 6, pull: 1 }}>
+                        <Input
+                          type='number'
+                          value={this.state.investorTokensWithTime}
+                          onChange={e => this.setState({ investorTokensWithTime: e.target.value })}
+                          onKeyDown={this.handleSubmit}
+                          placeholder='e.g. 100.46'
+                          className='form-control-sm'
+                        />
+                      </Col>
+                    </Row>
+                    <Row className='form-group'>
+                      <Col md={{ size: 4 }}><div className='mylabel'>Timestamp</div></Col>
+                      <Col md={{ size: 6, pull: 1 }} style={{ display: 'flex' }}>
+                        <Input
+                          readOnly
+                          value={this.state.investorTimestamp === 0 ? '' : moment(this.state.investorTimestamp).format('llll')}
+                          onFocus={() => this.showDatePicker('manual')}
+                          onKeyDown={this.handleSubmit}
+                          className='form-control-sm'
+                        />
+                        <IconButton
+                          onClick={() => this.clearTimestamp()}
+                          style={{ width: 27, height: 27, padding: 0 }}
+                        >
+                          <ContentClear />
+                        </IconButton>
+                        <div>
+                          <DatePicker
+                            id='manualDP'
+                            ref='manualDP'
+                            onChange={(x, event) => { this.showTimePicker(event) } }
+                            style={{ display: 'none' }}
+                          />
+                          <TimePicker
+                            id='manualTP'
+                            ref='manualTP'
+                            onChange={(x, time) => { this.setTimePicker(time) }}
+                            style={{ display: 'none' }}
+                          />
+                        </div>
+                      </Col>
+                    </Row>
+                    <RaisedButton label='Send' primary={true} onClick={() => this.manualSendTokensWithTime()}/>
+                  </Tab>
+                  <Tab label='Transfer tokens (ignores bonus program)'>
+                    <Row className='form-group' style={{ marginTop: '20px' }}>
+                      <Col md={{ size: 4 }} style={{ display: 'flex' }}>
+                        <div className='mylabel'>Investor address</div>
+                        <div style={{ color: 'red', marginLeft: '5px' }}>*</div>
+                      </Col>
+                      <Col md={{ size: 6, pull: 1 }}>
+                        <Input
+                          value={this.state.investorAddressWithBonus}
+                          onChange={e => this.setState({ investorAddressWithBonus: e.target.value })}
+                          onKeyDown={this.handleSubmit}
+                          placeholder='e.g. 0xc52a46cfba7ac9a9af0b24682595ab3359430f81'
+                          className='form-control-sm'
+                        />
+                      </Col>
+                    </Row>
+                    <Row className='form-group'>
+                      <Col md={{ size: 4 }} style={{ display: 'flex' }}>
+                        <div className='mylabel'>Amount tokens</div>
+                        <div style={{ color: 'red', marginLeft: '5px' }}>*</div>
+                      </Col>
+                      <Col md={{ size: 6, pull: 1 }}>
+                        <Input
+                          type='number'
+                          value={this.state.investorTokensWithBonus}
+                          onChange={e => this.setState({ investorTokensWithBonus: e.target.value })}
+                          onKeyDown={this.handleSubmit}
+                          placeholder='e.g. 100.46'
+                          className='form-control-sm'
+                        />
+                      </Col>
+                    </Row>
+                    <Row className='form-group'>
+                      <Col md={{ size: 4 }}><div className='mylabel'>Bonus tokens</div></Col>
+                      <Col md={{ size: 6, pull: 1 }}>
+                        <Input
+                          type='number'
+                          value={this.state.investorBonuses}
+                          onChange={e => this.setState({ investorBonuses: e.target.value })}
+                          onKeyDown={this.handleSubmit}
+                          placeholder='e.g. 20'
+                          className='form-control-sm'
+                        />
+                      </Col>
+                    </Row>
+                    <RaisedButton label='Send' primary={true} onClick={() => this.manualSendTokensWithBonus()}/>
+                  </Tab>
+                </Tabs>
+              </MuiThemeProvider>
+            </Col>
+          </Row>
+        </div>
+      );
+    }
+  }
+
+  renderStartNewRound() {
+    const { myAddress, owner } = this.state;
+    if ( owner.length > 0 && myAddress === owner) {
+      return (
+        <div>
+          <Row className='form-group'>
+            <Col md={{ size: 12 }}>
+              <label><strong>Start a new round (owner)</strong></label>
+            </Col>
+            <Col>
+              <Input
+                type='number'
+                value={this.state.newTokenRate}
+                onChange={e => this.setState({ newTokenRate: e.target.value })}
+                placeholder='Enter new rate (USD)'
+                onKeyDown={this.handleSubmit}
+              />
+            </Col>
+            <Col>
+              <Input
+                readOnly
+                value={this.state.newRoundStart.toLocaleString()}
+                onFocus={() => this.showDatePicker('round')}
+                onChange={e => this.setState({ newRoundStart: e.target.value })}
+                onKeyDown={this.handleSubmit}
+              />
+            </Col>
+          </Row>
+          <MuiThemeProvider muiTheme={lightMuiTheme}>
+            <RaisedButton
+              label='Start'
+              primary={true}
+              disabled={this.state.newRound}
+              onClick={() => this.startNewRound()}/>
+          </MuiThemeProvider>
+        </div>
+      )
+    }
+  }
+
+  renderTransferOwnership() {
+    const { myAddress, owner } = this.state;
+    if ( owner.length > 0 && myAddress === owner) {
+      return (
+        <div>
+          <Row className='form-group'>
+            <Col>
+              <label><strong>Transfer ownership (owner)</strong></label>
+              <Input
+                value={this.state.newOwner}
+                onChange={e => this.setState({ newOwner: e.target.value })}
+                placeholder='Enter address'
+                onKeyDown={this.handleSubmit}
+              />
+            </Col>
+          </Row>
+          <MuiThemeProvider muiTheme={lightMuiTheme}>
+            <RaisedButton label='Submit' primary={true} onClick={() => this.transferOwnership()}/>
+          </MuiThemeProvider>
+        </div>
+      )
+    }
+  }
+
   render() {
     return (
       <div className='App'>
         <Navbar className='myNavbar'>
           <div className='navbar-brand'>Enjoy life token ICO</div>
         </Navbar>
-        <Row>
+        <div className='myContainer'>
           <Col md={{ size: 8 }}>
             <div className='main-container'>
-              <Row>
+              <Row className='form-group'>
                 <Col>
                   <h4>My information</h4>
                   <hr className='my-2'/>
@@ -306,13 +581,19 @@ class App extends Component {
                       <Input disabled={true} value={this.state.myAddress}/>
                     </Col>
                   </Row>
-                  <Row>
-                    <Col md={{ size: 8 }}><label>Tokens bought by me</label></Col>
-                    <Col md={{ size: 4 }}>{this.state.myTokens}</Col>
+                  <Row><Col><label>My investments (not including pre-ICO)</label></Col></Row>
+                  <Row className='form-group'>
+                    <Col>
+                      <Input
+                        disabled={true}
+                        value={`${this.state.myInvestments} eth`}
+                        style={{ textAlign: 'end' }}
+                      />
+                    </Col>
                   </Row>
                   <Row>
-                    <Col md={{ size: 8 }}><label>Left tokens in the current round</label></Col>
-                    <Col md={{ size: 4 }}>{this.state.roundRemaining}</Col>
+                    <Col md={{ size: 9 }}><label>Tokens bought by me</label></Col>
+                    <Col md={{ size: 3 }} style={{ textAlign: 'end' }}>{this.state.myTokens}</Col>
                   </Row>
                 </Col>
                 <Col>
@@ -323,20 +604,28 @@ class App extends Component {
                     </Col>
                   </Row>
                   <Row>
-                    <Col md={{ size: 10 }}><label>ETH/USD</label></Col>
-                    <Col md={{ size: 2 }}>{this.state.usdRate}$</Col>
+                    <Col md={{ size: 8 }}><label>ETH/USD</label></Col>
+                    <Col md={{ size: 4 }} style={{ textAlign: 'end' }}>{this.state.usdRate}$</Col>
                   </Row>
                   <Row>
-                    <Col md={{ size: 10 }}><label>Token rate</label></Col>
-                    <Col md={{ size: 2 }}>{this.state.roundRate}$</Col>
+                    <Col md={{ size: 8 }}><label>Token rate</label></Col>
+                    <Col md={{ size: 4 }} style={{ textAlign: 'end' }}>{this.state.roundRate}$</Col>
                   </Row>
                   <Row>
-                    <Col md={{ size: 10 }}><label>Minimum investment for pre-ICO</label></Col>
-                    <Col md={{ size: 2 }}>{this.state.minInvestmentPreICO}$</Col>
+                    <Col md={{ size: 8 }}><label>Minimum investment for pre-ICO</label></Col>
+                    <Col md={{ size: 4 }} style={{ textAlign: 'end' }}>{this.state.minInvestmentPreICO}$</Col>
+                  </Row>
+                  <Row className='form-group'>
+                    <Col md={{ size: 8 }}><label>Minimum investment for ICO</label></Col>
+                    <Col md={{ size: 4 }} style={{ textAlign: 'end' }}>{this.state.minInvestmentICO}$</Col>
                   </Row>
                   <Row>
-                    <Col md={{ size: 10 }}><label>Minimum investment for ICO</label></Col>
-                    <Col md={{ size: 2 }}>{this.state.minInvestmentICO}$</Col>
+                    <Col md={{ size: 6 }}><label>Status</label></Col>
+                    <Col md={{ size: 6 }} style={{ textAlign: 'end', fontWeight: 'bolder' }}>{this.state.status}</Col>
+                  </Row>
+                  <Row>
+                    <Col md={{ size: 8 }}><label>Left tokens in the current round</label></Col>
+                    <Col md={{ size: 4 }} style={{ textAlign: 'end', fontWeight: 'bolder' }}>{this.state.roundRemaining}</Col>
                   </Row>
                 </Col>
               </Row>
@@ -361,151 +650,45 @@ class App extends Component {
                   </Row>
                 </Col>
                 <Col>
-                  <label><strong>Status</strong></label>
+                  <label><strong>After the completion of the ICO</strong></label>
                   <Row>
-                    <Col md={{ size: 6 }}>
-                      <div style={{ padding: 5 }}>{this.state.status}</div>
-                    </Col>
-                    <Col md={{ size: 3 }}>
+                    <Col md={{ size: 4 }}>
                       <MuiThemeProvider muiTheme={lightMuiTheme}>
-                        <RaisedButton label='Refund' secondary={true} onClick={() => this.refund()}/>
+                        <RaisedButton
+                          label='Refund'
+                          secondary={true}
+                          disabled={this.state.refund}
+                          onClick={() => this.refund()}
+                          style={{ width: 120 }}
+                        />
                       </MuiThemeProvider>
                     </Col>
-                    <Col md={{ size: 3 }}>
+                    <Col md={{ size: 4 }}>
                       <MuiThemeProvider muiTheme={lightMuiTheme}>
-                        <RaisedButton label='Burn' secondary={true} onClick={() => this.burn()}/>
+                        <RaisedButton
+                          label='Distribute'
+                          secondary={true}
+                          disabled={this.state.distribute}
+                          onClick={() => this.manualDistribute()}
+                          style={{ width: 120 }}
+                        />
+                      </MuiThemeProvider>
+                    </Col>
+                    <Col md={{ size: 4 }}>
+                      <MuiThemeProvider muiTheme={lightMuiTheme}>
+                        <RaisedButton
+                          label='Burn'
+                          secondary={true}
+                          disabled={this.state.burn}
+                          onClick={() => this.burn()}
+                          style={{ width: 120 }}
+                        />
                       </MuiThemeProvider>
                     </Col>
                   </Row>
                 </Col>
               </Row>
-              <Row>
-                <Col>
-                  <h4>Manual send tokens to investor</h4>
-                  <hr className='my-2'/>
-                </Col>
-              </Row>
-              <Row>
-                <Col>
-                  <MuiThemeProvider muiTheme={lightMuiTheme}>
-                    <Tabs onChange={this.tabChange}>
-                      <Tab label='Transfer tokens'>
-                        <Row className='form-group' style={{ marginTop: '20px' }}>
-                          <Col md={{ size: 4 }} style={{ display: 'flex' }}>
-                            <div className='mylabel'>Investor address</div>
-                            <div style={{ color: 'red', marginLeft: '5px' }}>*</div>
-                          </Col>
-                          <Col md={{ size: 6, pull: 1 }}>
-                            <Input
-                              value={this.state.investorAddressWithTime}
-                              onChange={e => this.setState({ investorAddressWithTime: e.target.value })}
-                              onKeyDown={this.handleSubmit}
-                              placeholder='e.g. 0xc52a46cfba7ac9a9af0b24682595ab3359430f81'
-                              className='form-control-sm'
-                            />
-                          </Col>
-                        </Row>
-                        <Row className='form-group'>
-                          <Col md={{ size: 4 }} style={{ display: 'flex' }}>
-                            <div className='mylabel'>Amount tokens</div>
-                            <div style={{ color: 'red', marginLeft: '5px' }}>*</div>
-                          </Col>
-                          <Col md={{ size: 6, pull: 1 }}>
-                            <Input
-                              type='number'
-                              value={this.state.investorTokensWithTime}
-                              onChange={e => this.setState({ investorTokensWithTime: e.target.value })}
-                              onKeyDown={this.handleSubmit}
-                              placeholder='e.g. 100.46'
-                              className='form-control-sm'
-                            />
-                          </Col>
-                        </Row>
-                        <Row className='form-group'>
-                          <Col md={{ size: 4 }}><div className='mylabel'>Timestamp</div></Col>
-                          <Col md={{ size: 6, pull: 1 }} style={{ display: 'flex' }}>
-                            <Input
-                              readOnly
-                              value={this.state.investorTimestamp === 0 ? '' : moment(this.state.investorTimestamp).format('llll')}
-                              onFocus={() => this.showDatePicker('manual')}
-                              onKeyDown={this.handleSubmit}
-                              className='form-control-sm'
-                            />
-                            <IconButton
-                              onClick={() => this.clearTimestamp()}
-                              style={{ width: 27, height: 27, padding: 0 }}
-                            >
-                              <ContentClear />
-                            </IconButton>
-                            <div>
-                              <DatePicker
-                                id='manualDP'
-                                ref='manualDP'
-                                onChange={(x, event) => { this.showTimePicker(event) } }
-                                style={{ display: 'none' }}
-                              />
-                              <TimePicker
-                                id='manualTP'
-                                ref='manualTP'
-                                onChange={(x, time) => { this.setTimePicker(time) }}
-                                style={{ display: 'none' }}
-                              />
-                            </div>
-                          </Col>
-                        </Row>
-                        <RaisedButton label='Send' primary={true} onClick={() => this.manualSendTokensWithTime()}/>
-                      </Tab>
-                      <Tab label='Transfer tokens (ignores bonus program)'>
-                        <Row className='form-group' style={{ marginTop: '20px' }}>
-                          <Col md={{ size: 4 }} style={{ display: 'flex' }}>
-                            <div className='mylabel'>Investor address</div>
-                            <div style={{ color: 'red', marginLeft: '5px' }}>*</div>
-                          </Col>
-                          <Col md={{ size: 6, pull: 1 }}>
-                            <Input
-                              value={this.state.investorAddressWithBonus}
-                              onChange={e => this.setState({ investorAddressWithBonus: e.target.value })}
-                              onKeyDown={this.handleSubmit}
-                              placeholder='e.g. 0xc52a46cfba7ac9a9af0b24682595ab3359430f81'
-                              className='form-control-sm'
-                            />
-                          </Col>
-                        </Row>
-                        <Row className='form-group'>
-                          <Col md={{ size: 4 }} style={{ display: 'flex' }}>
-                            <div className='mylabel'>Amount tokens</div>
-                            <div style={{ color: 'red', marginLeft: '5px' }}>*</div>
-                          </Col>
-                          <Col md={{ size: 6, pull: 1 }}>
-                            <Input
-                              type='number'
-                              value={this.state.investorTokensWithBonus}
-                              onChange={e => this.setState({ investorTokensWithBonus: e.target.value })}
-                              onKeyDown={this.handleSubmit}
-                              placeholder='e.g. 100.46'
-                              className='form-control-sm'
-                            />
-                          </Col>
-                        </Row>
-                        <Row className='form-group'>
-                          <Col md={{ size: 4 }}><div className='mylabel'>Bonus tokens</div></Col>
-                          <Col md={{ size: 6, pull: 1 }}>
-                            <Input
-                              type='number'
-                              value={this.state.investorBonuses}
-                              onChange={e => this.setState({ investorBonuses: e.target.value })}
-                              onKeyDown={this.handleSubmit}
-                              placeholder='e.g. 20'
-                              className='form-control-sm'
-                            />
-                          </Col>
-                        </Row>
-                        <RaisedButton label='Send' primary={true} onClick={() => this.manualSendTokensWithBonus()}/>
-                      </Tab>
-                    </Tabs>
-                  </MuiThemeProvider>
-                </Col>
-              </Row>
+              {this.renderManualSender()}
               <Row>
                 <Col>
                   <Row>
@@ -580,15 +763,15 @@ class App extends Component {
               </Row>
               <Row>
                 <Col md={{ size: 7 }}><label>Beginning of pre-ICO</label></Col>
-                <Col md={{ size: 5 }}>{this.state.startPreICO}</Col>
+                <Col md={{ size: 5 }}>{new Date(this.state.startPreICO * 1000).toLocaleString()}</Col>
               </Row>
               <Row>
                 <Col md={{ size: 7 }}><label>Beginning of ICO</label></Col>
-                <Col md={{ size: 5 }}>{this.state.startICO}</Col>
+                <Col md={{ size: 5 }}>{new Date(this.state.startICO * 1000).toLocaleString()}</Col>
               </Row>
               <Row>
                 <Col md={{ size: 7 }}><label>End of ICO</label></Col>
-                <Col md={{ size: 5 }}>{this.state.endICO}</Col>
+                <Col md={{ size: 5 }}>{new Date(this.state.endICO * 1000).toLocaleString()}</Col>
               </Row>
               <Row>
                 <Col>
@@ -604,32 +787,7 @@ class App extends Component {
                 <Col md={{ size: 7 }}><label>Beginning of the round</label></Col>
                 <Col md={{ size: 5 }}>{this.state.roundStart}</Col>
               </Row>
-              <Row className='form-group'>
-                <Col md={{ size: 12 }}>
-                  <label><strong>Start a new round (owner)</strong></label>
-                </Col>
-                <Col>
-                  <Input
-                    type='number'
-                    value={this.state.newTokenRate}
-                    onChange={e => this.setState({ newTokenRate: e.target.value })}
-                    placeholder='Enter new rate (USD)'
-                    onKeyDown={this.handleSubmit}
-                  />
-                </Col>
-                <Col>
-                  <Input
-                    readOnly
-                    value={this.state.newRoundStart.toLocaleString()}
-                    onFocus={() => this.showDatePicker('round')}
-                    onChange={e => this.setState({ newRoundStart: e.target.value })}
-                    onKeyDown={this.handleSubmit}
-                  />
-                </Col>
-              </Row>
-              <MuiThemeProvider muiTheme={lightMuiTheme}>
-                <RaisedButton label='Start' primary={true} onClick={() => this.startNewRound()}/>
-              </MuiThemeProvider>
+              {this.renderStartNewRound()}
               <Row>
                 <Col>
                   <h5>Contract info</h5>
@@ -648,23 +806,10 @@ class App extends Component {
                   <Input disabled={true} value={this.state.owner} />
                 </Col>
               </Row>
-              <Row className='form-group'>
-                <Col>
-                  <label><strong>Transfer ownership (owner)</strong></label>
-                  <Input
-                    value={this.state.newOwner}
-                    onChange={e => this.setState({ newOwner: e.target.value })}
-                    placeholder='Enter address'
-                    onKeyDown={this.handleSubmit}
-                  />
-                </Col>
-              </Row>
-              <MuiThemeProvider muiTheme={lightMuiTheme}>
-                <RaisedButton label='Submit' primary={true} onClick={() => this.transferOwnership()}/>
-              </MuiThemeProvider>
+              {this.renderTransferOwnership()}
             </div>
           </Col>
-        </Row>
+        </div>
       </div>
     );
   }

@@ -12,6 +12,10 @@ h4, h5 {
   border-left: 1px solid #a5c0c0;
 }
 
+.myContainer {
+  display: flex;
+}
+
 .main-col {
   display: flex;
   flex-direction: column;

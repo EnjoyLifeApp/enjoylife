@@ -43,8 +43,8 @@ contract Crowdsale is Ownable {
   uint constant decimals = 100; // 10**uint(token.decimals());
   uint constant maximumSoldTokens = 917431100;
 
-  uint constant minCapICO = 16E7;   // 1 600 000 tokens
-  uint constant maxCapPreICO = 1E8; // 1 000 000 tokens
+  uint public constant minCapICO = 16E7;   // 1 600 000 tokens
+  uint public constant maxCapPreICO = 1E8; // 1 000 000 tokens
 
   uint public tokensCountPreICO;
   uint public tokensCountICO;
@@ -82,7 +82,7 @@ contract Crowdsale is Ownable {
       uint totalValue = msg.value;
 
       uint tokens = valueUSD.mul(decimals).div(currentRound.rate);
-      uint tokensWithBonus = tokens + tokens >> 1;
+      uint tokensWithBonus = tokens.add(tokens >> 1);
 
       // Check for surrender by remaining tokens
       if (tokens > remainderTokens) {
@@ -143,6 +143,12 @@ contract Crowdsale is Ownable {
     }
   }
 
+  function manualDistribute() onlyOwner {
+    require(now > endICO && (tokensCountPreICO + tokensCountICO) > minCapICO);
+
+    distribute();
+  }
+
   function bonusCalculationICO(uint _tokens) internal returns(uint) {
     if (now > startICO + 12 days) {} else if (now > startICO + 9 days) {
       return _tokens.div(20);                // 5% tokens
@@ -164,7 +170,7 @@ contract Crowdsale is Ownable {
       uint totalValue = msg.value;
 
       uint tokens = valueUSD.mul(decimals).div(currentRound.rate);
-      uint tokensWithBonus = tokens + bonusCalculationICO(tokens);
+      uint tokensWithBonus = tokens.add(bonusCalculationICO(tokens));
 
       // Check for surrender by remaining tokens
       if (tokens > currentRound.remaining) {
@@ -206,7 +212,7 @@ contract Crowdsale is Ownable {
     uint time = _time > 0 ? _time : now;
     require(startPreICO < time && time < endICO);
 
-    uint tokensWithBonus = _tokens + (time < startICO ? _tokens >> 1 : bonusCalculationICO(_tokens));
+    uint tokensWithBonus = _tokens.add(time < startICO ? _tokens >> 1 : bonusCalculationICO(_tokens));
     uint remainderTokens = currentRound.remaining;
     uint totalTokens = tokensWithBonus > remainderTokens ? remainderTokens : tokensWithBonus;
 

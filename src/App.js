@@ -235,7 +235,7 @@ class App extends Component {
       from: web3.eth.accounts[0],
       to: crowdsaleAddress,
       value: web3.toWei(amount, 'ether'),
-      gas: 200000
+      gas: 300000
     }, async (error, tx) => {
       if (error) {
         console.error(error);
@@ -249,9 +249,8 @@ class App extends Component {
   async transferOwnership() {
     const { web3, instanceCrowdsale, newOwner } = this.state;
     await instanceCrowdsale.transferOwnership(newOwner, { from: web3.eth.accounts[0], gas: 100000 });
-    const owner = await instanceCrowdsale.owner.call();
 
-    this.setState({ owner: owner });
+    this.updateState();
   }
 
   async startNewRound() {
@@ -269,7 +268,7 @@ class App extends Component {
 
     await instanceCrowdsale.sendToAddress(
       investorAddressWithTime, investorTokensWithTime * divider, investorTimestamp / 1000,
-      { from: web3.eth.accounts[0], gas: 200000 }
+      { from: web3.eth.accounts[0], gas: 300000 }
     );
 
     this.updateState();
@@ -292,7 +291,7 @@ class App extends Component {
 
   async refund() {
     const { web3, instanceCrowdsale } = this.state;
-    await instanceCrowdsale.refund({ from: web3.eth.accounts[0] });
+    await instanceCrowdsale.refund({ from: web3.eth.accounts[0], gas: 100000 });
 
     console.log('refund');
     this.updateState();
@@ -300,7 +299,7 @@ class App extends Component {
 
   async burn() {
     const { web3, instanceCrowdsale } = this.state;
-    await instanceCrowdsale.burnTokens({ from: web3.eth.accounts[0] });
+    await instanceCrowdsale.burnTokens({ from: web3.eth.accounts[0], gas: 200000 });
 
     console.log('burn');
     this.updateState();
@@ -308,7 +307,7 @@ class App extends Component {
 
   async manualDistribute() {
     const { web3, instanceCrowdsale } = this.state;
-    await instanceCrowdsale.manualDistribute({ from: web3.eth.accounts[0] });
+    await instanceCrowdsale.manualDistribute({ from: web3.eth.accounts[0], gas: 200000 });
 
     console.log('distribute');
     this.updateState();
@@ -329,7 +328,7 @@ class App extends Component {
         <div>
           <Row>
             <Col>
-              <h4>Manual send tokens to investor</h4>
+              <h4>Send tokens manually</h4>
               <hr className='my-2'/>
             </Col>
           </Row>
@@ -355,7 +354,7 @@ class App extends Component {
                     </Row>
                     <Row className='form-group'>
                       <Col md={{ size: 4 }} style={{ display: 'flex' }}>
-                        <div className='mylabel'>Amount tokens</div>
+                        <div className='mylabel'>Amount of tokens</div>
                         <div style={{ color: 'red', marginLeft: '5px' }}>*</div>
                       </Col>
                       <Col md={{ size: 6, pull: 1 }}>
@@ -421,7 +420,7 @@ class App extends Component {
                     </Row>
                     <Row className='form-group'>
                       <Col md={{ size: 4 }} style={{ display: 'flex' }}>
-                        <div className='mylabel'>Amount tokens</div>
+                        <div className='mylabel'>Amount of tokens</div>
                         <div style={{ color: 'red', marginLeft: '5px' }}>*</div>
                       </Col>
                       <Col md={{ size: 6, pull: 1 }}>
@@ -585,7 +584,7 @@ class App extends Component {
                     <Col md={{ size: 8 }} style={{ textAlign: 'end', fontWeight: 'bolder' }}>{this.state.status}</Col>
                   </Row>
                   <Row>
-                    <Col md={{ size: 8 }}><label>Left tokens in the current round</label></Col>
+                    <Col md={{ size: 8 }}><label>Remaining tokens in the current round</label></Col>
                     <Col md={{ size: 4 }} style={{ textAlign: 'end', fontWeight: 'bolder' }}>{this.state.roundRemaining}</Col>
                   </Row>
                 </Col>
@@ -655,22 +654,22 @@ class App extends Component {
                     </Col>
                   </Row>
                   <Row>
-                    <Col md={{ size: 8 }}>
+                    <Col>
                       <Row>
-                        <Col><label>Number of not sold tokens</label></Col>
-                        <Col>{this.state.notSoldTokens}</Col>
+                        <Col><label>Number of unsold tokens</label></Col>
+                        <Col style={{ textAlign: 'end' }}>{this.state.notSoldTokens}</Col>
                       </Row>
                       <Row>
                         <Col><label>Number of tokens sold at pre-ICO</label></Col>
-                        <Col>{this.state.tokensCountPreICO}</Col>
+                        <Col style={{ textAlign: 'end' }}>{this.state.tokensCountPreICO}</Col>
                       </Row>
                       <Row>
                         <Col><label>Number of tokens sold at ICO</label></Col>
-                        <Col>{this.state.tokensCountICO}</Col>
+                        <Col style={{ textAlign: 'end' }}>{this.state.tokensCountICO}</Col>
                       </Row>
                       <Row>
                         <Col><label>Investors Count</label></Col>
-                        <Col>{this.state.numInvestors}</Col>
+                        <Col style={{ textAlign: 'end' }}>{this.state.numInvestors}</Col>
                       </Row>
                     </Col>
                   </Row>
@@ -741,7 +740,7 @@ class App extends Component {
                 </Col>
               </Row>
               <Row>
-                <Col md={{ size: 7 }}><label>Number of the current round</label></Col>
+                <Col md={{ size: 7 }}><label>Current round</label></Col>
                 <Col md={{ size: 5 }}>{this.state.roundNumber}</Col>
               </Row>
               <Row>

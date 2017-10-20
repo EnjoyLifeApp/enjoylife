@@ -223,19 +223,20 @@ contract Crowdsale is Ownable {
     }
 
     uint totalTokens = tokensWithBonus > remainderTokens ? remainderTokens : tokensWithBonus;
-    if (totalTokens > 0) {
-      countingTokens(_address, totalTokens, time);
-      ethDistribution();
-    }
+
+    assert(totalTokens > 0);
+    countingTokens(_address, totalTokens, time);
+    ethDistribution();
   }
 
   function sendToAddressWithBonus(address _address, uint _tokens, uint _bonus) onlyOwner {
-    require(_tokens > 0 || _bonus > 0 && startPreICO < now && now < endICO + 5 days);
+    require(_tokens > 0 || _bonus > 0 && startPreICO < now && now < (endICO + burnTime * 1 days));
 
     uint tempTokens = _tokens.add(_bonus);
-    uint remainderTokens = currentRound.remaining;
+    uint remainderTokens = (now < startICO ? maxCapPreICO.sub(tokensCountPreICO) : currentRound.remaining);
     uint totalTokens = tempTokens > remainderTokens ? remainderTokens : tempTokens;
 
+    assert(totalTokens > 0);
     countingTokens(_address, totalTokens, now);
     ethDistribution();
   }
@@ -244,14 +245,14 @@ contract Crowdsale is Ownable {
     require(_start > startICO && _start < endICO && _start > now && _rate > 0 && currentRound.remaining == 0);
 
     uint numberRounds = token.initialSupply().div(1E9); // 10 000 000 tokens
-    if (currentRound.number < numberRounds) {
-      currentRound.number = currentRound.number.add(1);
-      currentRound.start = _start;
-      currentRound.rate = _rate;
-      currentRound.remaining = maximumSoldTokens;                              // remainder
-      currentRound.reserveBounty = currentRound.reserveBounty.add(203873500);  // 2% of sold tokens
-      currentRound.reserveTeam = currentRound.reserveTeam.add(713557600);      // 7% of sold tokens
-    }
+
+    assert(currentRound.number < numberRounds);
+    currentRound.number = currentRound.number.add(1);
+    currentRound.start = _start;
+    currentRound.rate = _rate;
+    currentRound.remaining = maximumSoldTokens;                              // remainder
+    currentRound.reserveBounty = currentRound.reserveBounty.add(203873500);  // 2% of sold tokens
+    currentRound.reserveTeam = currentRound.reserveTeam.add(713557600);      // 7% of sold tokens
   }
 
   function refund() {
@@ -263,7 +264,7 @@ contract Crowdsale is Ownable {
   }
 
   function burnTokens() onlyOwner {
-    require(now > endICO + (burnTime * 1 days) && (tokensCountPreICO + tokensCountICO) > minCapICO);
+    require(now > (endICO + burnTime * 1 days) && (tokensCountPreICO + tokensCountICO) > minCapICO);
 
     uint soldTokens = maximumSoldTokens.sub(currentRound.remaining);
     currentRound.remaining = 0;

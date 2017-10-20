@@ -1,13 +1,15 @@
 pragma solidity ^0.4.15;
 
-import "./Ownable.sol";
-import "./SafeMath.sol";
-import "./EnjoyLifeCoinToken.sol";
+import './Ownable.sol';
+import './SafeMath.sol';
+import './EnjoyLifeCoinToken.sol';
+import './OraclizeWrapper.sol';
 
 contract Crowdsale is Ownable {
   using SafeMath for uint;
 
   EnjoyLifeCoinToken public token = new EnjoyLifeCoinToken();
+  OraclizeWrapper public oraclize = new OraclizeWrapper();
 
   enum DistributionStages { initial, minCapMet, threeMillions, fiveMillions, sevenMillions }
   DistributionStages public currentStage = DistributionStages.initial;
@@ -39,7 +41,6 @@ contract Crowdsale is Ownable {
 
   uint public constant minInvestmentPreICO = 20000; // 200 USD
   uint public constant minInvestmentICO = 5000;     // 50 USD
-  uint public currentRateUSD = 30000;               // 300 USD = 1 ether
 
   uint constant decimals = 100; // 10**uint(token.decimals());
   uint constant maximumSoldTokens = 917431100;
@@ -71,13 +72,36 @@ contract Crowdsale is Ownable {
   modifier preIcoOn() { require(startPreICO < now && now < startICO); _; }
   modifier icoOn() { require(startICO < now && now < endICO); _; }
 
+  function bytesToUInt(bytes32 v) constant returns (uint ret) {
+    if (v == 0x0) {
+      revert();
+    }
+
+    uint digit;
+    for (uint i = 0; i < 32; i++) {
+      digit = uint((uint(v) / (2 ** (8 * (31 - i)))) & 0xff);
+      if (digit == 0) {
+        break;
+      } else if (digit < 48 || digit > 57) {
+        revert();
+      }
+      ret *= 10;
+      ret += (digit - 48);
+    }
+    return ret;
+  }
+
+  function currentRateUSD() public constant returns (uint) {
+    return bytesToUInt(oraclize.getRate());
+  }
+
   function calculationNumberInvestors(address _addr, uint _tokens) internal {
     if (investorsTokens[_addr] == 0) investors.push(_addr);
     investorsTokens[_addr] = investorsTokens[_addr].add(_tokens);
   }
 
   function createPreIcoTokens() preIcoOn payable {
-    uint valueUSD = msg.value.mul(currentRateUSD).div(1 ether);
+    uint valueUSD = msg.value.mul(currentRateUSD()).div(1 ether);
     uint remainderTokens = maxCapPreICO.sub(tokensCountPreICO);
 
     if (valueUSD >= minInvestmentPreICO && remainderTokens > 0) {
@@ -89,7 +113,7 @@ contract Crowdsale is Ownable {
       // Check for surrender by remaining tokens
       if (tokens > remainderTokens) {
         uint overTokens = tokens.sub(remainderTokens);
-        uint surrender = overTokens.mul(currentRound.rate).mul(1 ether).div(decimals).div(currentRateUSD);
+        uint surrender = overTokens.mul(currentRound.rate).mul(1 ether).div(decimals).div(currentRateUSD());
 
         msg.sender.transfer(surrender);
         TransferWei(msg.sender, surrender);
@@ -162,10 +186,8 @@ contract Crowdsale is Ownable {
   }
 
   function createIcoTokens() icoOn payable {
-    require(now > currentRound.start);
-
-    uint valueUSD = msg.value.mul(currentRateUSD).div(1 ether);
-    if (valueUSD >= minInvestmentICO && currentRound.remaining > 0) {
+    uint valueUSD = msg.value.mul(currentRateUSD()).div(1 ether);
+    if (now > currentRound.start && valueUSD >= minInvestmentICO && currentRound.remaining > 0) {
       uint totalValue = msg.value;
 
       uint tokens = valueUSD.mul(decimals).div(currentRound.rate);
@@ -174,7 +196,7 @@ contract Crowdsale is Ownable {
       // Check for surrender by remaining tokens
       if (tokens > currentRound.remaining) {
         uint overTokens = tokens.sub(currentRound.remaining);
-        uint surrender = overTokens.mul(currentRound.rate).mul(1 ether).div(decimals).div(currentRateUSD);
+        uint surrender = overTokens.mul(currentRound.rate).mul(1 ether).div(decimals).div(currentRateUSD());
 
         msg.sender.transfer(surrender);
         TransferWei(msg.sender, surrender);

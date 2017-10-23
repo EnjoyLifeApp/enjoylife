@@ -23,6 +23,7 @@ contract Crowdsale is Ownable {
     uint reserveTeam;
   }
   Round public currentRound;
+  Round[] public rounds;
 
   address feeAccount = 0xdA39e0Ce2adf93129D04F53176c7Bfaaae8B051a;
   address bountyAccount = 0x0064952457905eBFB9c0292200A74B1d7414F081;
@@ -269,6 +270,7 @@ contract Crowdsale is Ownable {
     uint numberRounds = token.initialSupply().div(1E9); // 10 000 000 tokens
 
     assert(currentRound.number < numberRounds);
+    rounds.push(currentRound);
     currentRound.number = currentRound.number.add(1);
     currentRound.start = _start;
     currentRound.rate = _rate;

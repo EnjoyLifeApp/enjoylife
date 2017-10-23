@@ -38,6 +38,7 @@ class App extends Component {
 
       // Information on sale
       usdRate: 0,
+      roundRate: 0,
       minInvestmentPreICO: 0,
       minInvestmentICO: 0,
 
@@ -52,6 +53,7 @@ class App extends Component {
       // Start new round
       newTokenRate: '',
       newRoundStart: new Date(),
+      previousRounds: [],
 
       // Transfer ownership
       newOwner: '',
@@ -159,6 +161,14 @@ class App extends Component {
     // Check the start of a new round (remaining tokens)
     // require(_start > startICO && _start < endICO && _start > now && _rate > 0 && currentRound.remaining == 0);
     const newRound = currentRound[3].toNumber() === 0 ? false : true;
+    const roundNumber = currentRound[0].toNumber();
+
+    // Getting information on previous rounds
+    const previousRounds = [];
+    for (let i = 0; i < roundNumber - 1; i++) {
+       const round = await instanceCrowdsale.rounds.call(i);
+       previousRounds.push(round);
+    }
 
     // Check the possibility of distributing tokens after the completion of the ICO
     // require(now > endICO && (tokensCountPreICO + tokensCountICO) > minCapICO);
@@ -187,10 +197,11 @@ class App extends Component {
       distribute: distribute ? false : true,
 
       // Round information
-      roundNumber: currentRound[0].toNumber(),
+      roundNumber: roundNumber,
       roundStart: new Date(currentRound[1] * 1000).toLocaleString(),
       roundRate: currentRound[2].toNumber() / divider,
-      roundRemaining: currentRound[3].toNumber() / divider
+      roundRemaining: currentRound[3].toNumber() / divider,
+      previousRounds: previousRounds
     });
 
     this.checkStatus();
@@ -498,6 +509,44 @@ class App extends Component {
     }
   }
 
+  renderPreviousRounds() {
+    if (this.state.previousRounds.length > 0) {
+      return (
+        <div>
+          <Row>
+            <Col>
+              <h5>Previous rounds</h5>
+              <hr className='my-2'/>
+            </Col>
+          </Row>
+          {this.state.previousRounds.map((round, index) => {
+            return (
+              <div key={index}>
+                <Row>
+                  <Col>
+                    <label><strong>Round №{round[0].toNumber()}</strong></label>
+                  </Col>
+                </Row>
+                <Row>
+                  <Col md={{ size: 7 }}><label>Start</label></Col>
+                  <Col md={{ size: 5 }}>{new Date(round[1] * 1000).toLocaleString()}</Col>
+                </Row>
+                <Row>
+                  <Col md={{ size: 7 }}><label>Rate</label></Col>
+                  <Col md={{ size: 5 }}>{round[2].toNumber()}$</Col>
+                </Row>
+                <Row>
+                  <Col md={{ size: 7 }}><label>Sold tokens</label></Col>
+                  <Col md={{ size: 5 }}>{(917431100 - round[3].toNumber()) / this.state.divider}</Col>
+                </Row>
+              </div>
+            )
+          })}
+        </div>
+      )
+    }
+  }
+
   renderTransferOwnership() {
     const { myAddress, owner } = this.state;
     if ( owner.length > 0 && myAddress === owner) {
@@ -586,6 +635,12 @@ class App extends Component {
                   <Row>
                     <Col md={{ size: 8 }}><label>Remaining tokens in the current round</label></Col>
                     <Col md={{ size: 4 }} style={{ textAlign: 'end', fontWeight: 'bolder' }}>{this.state.roundRemaining}</Col>
+                  </Row>
+                  <Row>
+                    <Col md={{ size: 8 }}><label>Sold tokens in the current round</label></Col>
+                    <Col md={{ size: 4 }} style={{ textAlign: 'end' }}>
+                      {(9174311 - this.state.roundRemaining) / this.state.divider}
+                    </Col>
                   </Row>
                 </Col>
               </Row>
@@ -748,6 +803,7 @@ class App extends Component {
                 <Col md={{ size: 5 }}>{this.state.roundStart}</Col>
               </Row>
               {this.renderStartNewRound()}
+              {this.renderPreviousRounds()}
               <Row>
                 <Col>
                   <h5>Contract info</h5>

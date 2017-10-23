@@ -16,6 +16,11 @@ h4, h5 {
   display: flex;
 }
 
+.myLabel {
+  display: flex;
+  margin-left: 15px;
+}
+
 .main-col {
   display: flex;
   flex-direction: column;

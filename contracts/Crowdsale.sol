@@ -17,6 +17,7 @@ contract Crowdsale is Ownable {
   struct Round {
     uint number;
     uint start;
+    uint end;
     uint rate;
     uint remaining;
     uint reserveBounty;
@@ -24,6 +25,7 @@ contract Crowdsale is Ownable {
   }
   Round public currentRound;
   Round[] public rounds;
+  uint public numberRounds = 5; // token.initialSupply().div(1E9); // 10 000 000 tokens
 
   address feeAccount = 0xdA39e0Ce2adf93129D04F53176c7Bfaaae8B051a;
   address bountyAccount = 0x0064952457905eBFB9c0292200A74B1d7414F081;
@@ -36,9 +38,8 @@ contract Crowdsale is Ownable {
   uint public getBalanceContract;
   uint public burnTime;
 
-  uint public startPreICO; // 01.11.2017 12:00 UTC+2 --> 1509530400
-  uint public startICO;    // 01.12.2017 12:00 UTC+2 --> 1512122400
-  uint public endICO;      // 15.01.2018 00:00 UTC+2 --> 1515967200
+  uint public startPreICO;
+  uint public startICO;
 
   uint public constant minInvestmentPreICO = 20000; // 200 USD
   uint public constant minInvestmentICO = 5000;     // 50 USD
@@ -54,24 +55,27 @@ contract Crowdsale is Ownable {
 
   event TransferWei(address indexed addr, uint amount);
 
-  function Crowdsale(uint _startPreICO, uint _startICO, uint _endICO, uint _rate, uint _burnTime) {
+  // Parametrs:
+  // - beginning of pre-ICO (01.11.2017 12:00 UTC+2 --> 1509530400)
+  // - beginning of ICO (01.12.2017 12:00 UTC+2 --> 1512122400)
+  // - end first round of ICO (15.01.2018 00:00 UTC+2 --> 1515967200)
+  // - token rate (cents)
+  // - number of days from the end of the ISO and to the burning of the tokens
+  function Crowdsale(uint _startPreICO, uint _startICO, uint _endFirstRound, uint _rate, uint _burnTime) {
     startPreICO = _startPreICO;
     startICO = _startICO;
-    endICO = _endICO;
     burnTime = _burnTime;
 
     currentRound = Round({
       number: 1,
       start: _startPreICO,
+      end: _endFirstRound,
       rate: _rate,
       remaining: maximumSoldTokens,
       reserveBounty: 0,
       reserveTeam: 0
     });
   }
-
-  modifier preIcoOn() { require(startPreICO < now && now < startICO); _; }
-  modifier icoOn() { require(startICO < now && now < endICO); _; }
 
   function bytesToUInt(bytes32 v) constant returns (uint ret) {
     if (v == 0x0) {
@@ -101,7 +105,7 @@ contract Crowdsale is Ownable {
     investorsTokens[_addr] = investorsTokens[_addr].add(_tokens);
   }
 
-  function createPreIcoTokens() preIcoOn payable {
+  function createPreIcoTokens() internal {
     uint valueUSD = msg.value.mul(currentRateUSD()).div(1 ether);
     uint remainderTokens = maxCapPreICO.sub(tokensCountPreICO);
 
@@ -169,7 +173,7 @@ contract Crowdsale is Ownable {
   }
 
   function manualDistribute() onlyOwner {
-    require(now > endICO && (tokensCountPreICO + tokensCountICO) > minCapICO);
+    require(currentRound.number == numberRounds && now > currentRound.end && (tokensCountPreICO + tokensCountICO) > minCapICO);
 
     distribute();
   }
@@ -186,9 +190,9 @@ contract Crowdsale is Ownable {
     }
   }
 
-  function createIcoTokens() icoOn payable {
+  function createIcoTokens() internal {
     uint valueUSD = msg.value.mul(currentRateUSD()).div(1 ether);
-    if (now > currentRound.start && valueUSD >= minInvestmentICO && currentRound.remaining > 0) {
+    if (valueUSD >= minInvestmentICO && currentRound.remaining > 0) {
       uint totalValue = msg.value;
 
       uint tokens = valueUSD.mul(decimals).div(currentRound.rate);
@@ -233,7 +237,7 @@ contract Crowdsale is Ownable {
 
   function sendToAddress(address _address, uint _tokens, uint _time) onlyOwner {
     uint time = _time > 0 ? _time : now;
-    require(startPreICO < time && time < endICO);
+    require(startPreICO < time && time < currentRound.end);
 
     uint tokensWithBonus;
     uint remainderTokens;
@@ -253,7 +257,10 @@ contract Crowdsale is Ownable {
   }
 
   function sendToAddressWithBonus(address _address, uint _tokens, uint _bonus) onlyOwner {
-    require(_tokens > 0 || _bonus > 0 && startPreICO < now && now < (endICO + burnTime * 1 days));
+    require(
+      _tokens > 0 || _bonus > 0 &&
+      startPreICO < now && now < (currentRound.number == numberRounds ? currentRound.end + burnTime * 1 days : currentRound.end)
+    );
 
     uint tempTokens = _tokens.add(_bonus);
     uint remainderTokens = (now < startICO ? maxCapPreICO.sub(tokensCountPreICO) : currentRound.remaining);
@@ -264,23 +271,32 @@ contract Crowdsale is Ownable {
     ethDistribution();
   }
 
-  function startingNewRound(uint _start, uint _rate) onlyOwner {
-    require(_start > startICO && _start < endICO && _start > now && _rate > 0 && currentRound.remaining == 0);
+  function startingNewRound(uint _start, uint _end, uint _rate) onlyOwner {
+    require(
+      now > currentRound.end &&
+      _start > currentRound.end && _start > now &&
+      _end > _start && _rate > 0 &&
+      currentRound.number < numberRounds
+    );
 
-    uint numberRounds = token.initialSupply().div(1E9); // 10 000 000 tokens
-
-    assert(currentRound.number < numberRounds);
     rounds.push(currentRound);
     currentRound.number = currentRound.number.add(1);
     currentRound.start = _start;
+    currentRound.end = _end;
     currentRound.rate = _rate;
-    currentRound.remaining = maximumSoldTokens;                              // remainder
-    currentRound.reserveBounty = currentRound.reserveBounty.add(203873500);  // 2% of sold tokens
-    currentRound.reserveTeam = currentRound.reserveTeam.add(713557600);      // 7% of sold tokens
+    currentRound.remaining = maximumSoldTokens;
+
+    // Reservation of tokens
+    uint soldTokens = maximumSoldTokens.sub(currentRound.remaining);
+    currentRound.reserveBounty = soldTokens.div(50).add(currentRound.reserveBounty);     // 2% of sold tokens
+    currentRound.reserveTeam = soldTokens.mul(7).div(100).add(currentRound.reserveTeam); // 7% of sold tokens
   }
 
   function refund() {
-    require(now > endICO && (tokensCountPreICO + tokensCountICO) < minCapICO);
+    require(
+      currentRound.number == numberRounds && now > currentRound.end &&
+      (tokensCountPreICO + tokensCountICO) < minCapICO
+    );
 
     msg.sender.transfer(balancesICO[msg.sender]);
     TransferWei(msg.sender, balancesICO[msg.sender]);
@@ -288,7 +304,11 @@ contract Crowdsale is Ownable {
   }
 
   function burnTokens() onlyOwner {
-    require(now > (endICO + burnTime * 1 days) && (tokensCountPreICO + tokensCountICO) > minCapICO);
+    require(
+      currentRound.number == numberRounds &&
+      now > (currentRound.end + burnTime * 1 days) &&
+      (tokensCountPreICO + tokensCountICO) > minCapICO
+    );
 
     uint soldTokens = maximumSoldTokens.sub(currentRound.remaining);
     currentRound.remaining = 0;
@@ -310,10 +330,10 @@ contract Crowdsale is Ownable {
   }
 
   function() payable {
-    if (startICO < now && now < endICO) {
-      createIcoTokens();
-    } else if (startPreICO < now && now < startICO) {
+    if (startPreICO < now && now < startICO) {
       createPreIcoTokens();
+    } else if (currentRound.start < now && now < currentRound.end) {
+      createIcoTokens();
     } else {
       revert();
     }

@@ -25,6 +25,8 @@ import ContentClear from 'material-ui/svg-icons/content/clear';
 
 const contract = require('truffle-contract');
 
+const timeFormat = 'D.MM.YYYY, HH:mm:ss';
+
 class App extends Component {
   constructor(props) {
     super(props);
@@ -41,6 +43,8 @@ class App extends Component {
       roundRate: 0,
       minInvestmentPreICO: 0,
       minInvestmentICO: 0,
+      startPreICO: moment(0),
+      startICO: moment(0),
 
       // Manual send tokens
       investorAddressWithTime: '',
@@ -53,12 +57,19 @@ class App extends Component {
       // Start new round
       newTokenRate: '',
       newRoundStart: new Date(),
+      newRoundEnd: new Date(),
       previousRounds: [],
 
       // Transfer ownership
       newOwner: '',
 
+      // Current round
+      currentRound: [],
+      roundStart: moment(0),
+      roundEnd: moment(0),
+
       // Other
+      numberRounds: 1,
       myInvestments: 0,
       amount: '',
       tab: 'a',
@@ -76,10 +87,14 @@ class App extends Component {
       // Crowdsale initialization
       crowdsale.setProvider(web3.currentProvider);
       const instance = await crowdsale.deployed();
-      const [tokenAddress, startPreICO, startICO, endICO, minInvestmentPreICO, minInvestmentICO, minCapICO, burnTime] = await Promise.all([
+      const [
+        tokenAddress, startPreICO, startICO,
+        minInvestmentPreICO, minInvestmentICO,
+        minCapICO, burnTime, numberRounds
+      ] = await Promise.all([
         instance.token.call(), instance.startPreICO.call(), instance.startICO.call(),
-        instance.endICO.call(), instance.minInvestmentPreICO.call(), instance.minInvestmentICO.call(),
-        instance.minCapICO.call(), instance.burnTime.call()
+        instance.minInvestmentPreICO.call(), instance.minInvestmentICO.call(),
+        instance.minCapICO.call(), instance.burnTime.call(), instance.numberRounds.call()
       ]);
 
       // Enjoy life token initialization
@@ -110,10 +125,10 @@ class App extends Component {
         initialSupply: initialSupply.toNumber() / divider,
 
         // Information on the crowdsale
+        numberRounds: numberRounds.toNumber(),
         crowdsaleAddress: crowdsale.address,
-        startPreICO: startPreICO,
-        startICO: startICO,
-        endICO: endICO,
+        startPreICO: moment.unix(startPreICO),
+        startICO: moment.unix(startICO),
         minInvestmentPreICO: minInvestmentPreICO.toNumber() / divider,
         minInvestmentICO: minInvestmentICO.toNumber() / divider,
         minCapICO: minCapICO,
@@ -127,22 +142,20 @@ class App extends Component {
   }
 
   async updateState() {
-    const { web3, instanceCrowdsale, instanceToken, divider, minCapICO, burnTime } = this.state;
+    const { web3, instanceCrowdsale, instanceToken, divider, minCapICO, burnTime, numberRounds } = this.state;
 
     // Fields update
     const [
       myTokens, tokensCountPreICO, tokensCountICO,
-      numInvestors, currentRound, endICO,
-      myInvestments, owner, usdRate,
-      notSoldTokens
+      numInvestors, currentRound, myInvestments,
+      owner, usdRate, notSoldTokens
     ] = await Promise.all([
       instanceToken.balanceOf(web3.eth.accounts[0]), instanceCrowdsale.tokensCountPreICO.call(),
       instanceCrowdsale.tokensCountICO.call(), instanceCrowdsale.getAllInvestors.call(),
-      instanceCrowdsale.currentRound.call(), instanceCrowdsale.endICO.call(),
-      instanceCrowdsale.balancesICO.call(web3.eth.accounts[0]),
-      instanceCrowdsale.owner.call(), instanceCrowdsale.currentRateUSD.call(),
-      instanceCrowdsale.getTokens.call()
+      instanceCrowdsale.currentRound.call(), instanceCrowdsale.balancesICO.call(web3.eth.accounts[0]),
+      instanceCrowdsale.owner.call(), instanceCrowdsale.currentRateUSD.call(), instanceCrowdsale.getTokens.call()
     ]);
+    const roundNumber = currentRound[0].toNumber();
 
     // Get info about investors
     let investorsTokens = [];
@@ -153,15 +166,35 @@ class App extends Component {
     }
 
     // Сheck the possibility of refund and burn
-    // Refund: require(now > endICO && (tokensCountPreICO + tokensCountICO) < minCapICO);
-    // Burn: require(now > endICO + 5 days && (tokensCountPreICO + tokensCountICO) > minCapICO);
-    const refund = moment() > moment.unix(endICO) && (tokensCountPreICO.toNumber() + tokensCountICO.toNumber()) < minCapICO.toNumber();
-    const burn = moment() > moment.unix(endICO).add(burnTime, 'days') && (tokensCountPreICO.toNumber() + tokensCountICO.toNumber()) > minCapICO.toNumber();
+    //
+    // Refund:
+    // require(
+    //  currentRound.number == numberRounds && now > currentRound.end &&
+    //  (tokensCountPreICO + tokensCountICO) < minCapICO
+    // );
+    //
+    // Burn:
+    // require(
+    //  currentRound.number == numberRounds &&
+    //  now > (currentRound.end + burnTime * 1 days) &&
+    //  (tokensCountPreICO + tokensCountICO) > minCapICO
+    // );
+    const refund =
+      roundNumber === numberRounds && moment() > moment.unix(currentRound[2]) &&
+      (tokensCountPreICO.toNumber() + tokensCountICO.toNumber()) < minCapICO.toNumber();
+    const burn =
+      roundNumber === numberRounds &&
+      moment() > moment.unix(currentRound[2]).add(burnTime, 'days') &&
+      (tokensCountPreICO.toNumber() + tokensCountICO.toNumber()) > minCapICO.toNumber();
 
     // Check the start of a new round (remaining tokens)
-    // require(_start > startICO && _start < endICO && _start > now && _rate > 0 && currentRound.remaining == 0);
-    const newRound = currentRound[3].toNumber() === 0 ? false : true;
-    const roundNumber = currentRound[0].toNumber();
+    // require(
+    //  now > currentRound.end &&
+    //  _start > currentRound.end && _start > now &&
+    //  _end > _start && _rate > 0 &&
+    //  currentRound.number < numberRounds
+    // );
+    const newRound = moment() > moment.unix(currentRound[2]) && roundNumber < numberRounds;
 
     // Getting information on previous rounds
     const previousRounds = [];
@@ -171,8 +204,11 @@ class App extends Component {
     }
 
     // Check the possibility of distributing tokens after the completion of the ICO
-    // require(now > endICO && (tokensCountPreICO + tokensCountICO) > minCapICO);
-    const distribute = moment() > moment.unix(endICO) && (tokensCountPreICO.toNumber() + tokensCountICO.toNumber()) > minCapICO.toNumber();
+    // require(currentRound.number == numberRounds && now > currentRound.end && (tokensCountPreICO + tokensCountICO) > minCapICO);
+    const distribute =
+      roundNumber === numberRounds &&
+      moment() > moment.unix(currentRound[2]) &&
+      (tokensCountPreICO.toNumber() + tokensCountICO.toNumber()) > minCapICO.toNumber();
 
     this.setState({
       owner: owner,
@@ -193,14 +229,15 @@ class App extends Component {
       // Button status
       refund: refund ? false : true,
       burn: burn ? false : true,
-      newRound: newRound,
+      newRound: newRound ? false : true,
       distribute: distribute ? false : true,
 
       // Round information
       roundNumber: roundNumber,
-      roundStart: new Date(currentRound[1] * 1000).toLocaleString(),
-      roundRate: currentRound[2].toNumber() / divider,
-      roundRemaining: currentRound[3].toNumber() / divider,
+      roundStart: moment.unix(currentRound[1]),
+      roundEnd: moment.unix(currentRound[2]),
+      roundRate: currentRound[3].toNumber() / divider,
+      roundRemaining: currentRound[4].toNumber() / divider,
       previousRounds: previousRounds
     });
 
@@ -208,16 +245,18 @@ class App extends Component {
   }
 
   checkStatus() {
-    const { startPreICO, startICO, endICO, refund } = this.state;
+    const { startPreICO, startICO, refund, roundNumber, roundEnd, numberRounds } = this.state;
     let status = '';
-    if (moment() < moment.unix(startPreICO)) {
+    if (moment() < startPreICO) {
       status = 'Waiting for pre-ICO to start';
-    } else if (moment() < moment.unix(startICO)) {
+    } else if (moment() < startICO) {
       status = 'Pre-ICO in progress';
-    } else if (moment() < moment.unix(endICO)) {
+    } else if (roundNumber < numberRounds) {
       status = 'ICO in progress';
-    } else {
+    } else if (roundNumber === numberRounds && moment() > roundEnd) {
       status = refund ? 'ICO completed!' : 'ICO has failed!';
+    } else {
+      status = 'Unknown';
     }
     this.setState({ status: status });
   }
@@ -237,7 +276,20 @@ class App extends Component {
     time.setMonth(this.state.datePicker.getMonth());
     time.setFullYear(this.state.datePicker.getFullYear());
     time.setSeconds(0);
-    this.setState(this.state.flag === 'manual' ? { investorTimestamp: time.getTime() } : { newRoundStart: time } );
+
+    switch (this.state.flag) {
+      case 'manual':
+        this.setState({ investorTimestamp: time.getTime() });
+        break;
+      case 'roundStart':
+        this.setState({ newRoundStart: time });
+        break;
+      case 'roundEnd':
+        this.setState({ newRoundEnd: time });
+        break;
+      default:
+        console.error('type of setTimePicker');
+    }
   }
 
   buyingTokens() {
@@ -265,8 +317,11 @@ class App extends Component {
   }
 
   async startNewRound() {
-    const { web3, instanceCrowdsale, newTokenRate, newRoundStart } = this.state;
-    await instanceCrowdsale.startingNewRound(newRoundStart.getTime() / 1000, newTokenRate * 100, { from: web3.eth.accounts[0], gas: 200000 });
+    const { web3, instanceCrowdsale, newTokenRate, newRoundStart, newRoundEnd } = this.state;
+    await instanceCrowdsale.startingNewRound(
+      newRoundStart.getTime() / 1000, newRoundEnd.getTime() / 1000,
+      newTokenRate * 100, { from: web3.eth.accounts[0], gas: 200000 }
+    );
 
     this.updateState();
   }
@@ -474,27 +529,60 @@ class App extends Component {
     if ( owner.length > 0 && myAddress === owner) {
       return (
         <div>
-          <Row className='form-group'>
+          <Row>
             <Col md={{ size: 12 }}>
               <label><strong>Start a new round (owner)</strong></label>
             </Col>
-            <Col>
-              <Input
-                type='number'
-                value={this.state.newTokenRate}
-                onChange={e => this.setState({ newTokenRate: e.target.value })}
-                placeholder='Enter new rate (USD)'
-                onKeyDown={this.handleSubmit}
-              />
+            <Col md={{ size: 12 }} className='form-group'>
+              <Row>
+                <Col className='myLabel'>
+                  <label>Rate</label>
+                  <div style={{ color: 'red', marginLeft: '5px' }}>*</div>
+                </Col>
+                <Col>
+                  <Input
+                    type='number'
+                    value={this.state.newTokenRate}
+                    onChange={e => this.setState({ newTokenRate: e.target.value })}
+                    placeholder='Enter rate (USD)'
+                    onKeyDown={this.handleSubmit}
+                  />
+                </Col>
+              </Row>
             </Col>
-            <Col>
-              <Input
-                readOnly
-                value={this.state.newRoundStart.toLocaleString()}
-                onFocus={() => this.showDatePicker('round')}
-                onChange={e => this.setState({ newRoundStart: e.target.value })}
-                onKeyDown={this.handleSubmit}
-              />
+            <Col md={{ size: 12 }} className='form-group'>
+              <Row>
+                <Col className='myLabel'>
+                  <label>Start</label>
+                  <div style={{ color: 'red', marginLeft: '5px' }}>*</div>
+                </Col>
+                <Col>
+                  <Input
+                    readOnly
+                    value={this.state.newRoundStart.toLocaleString()}
+                    onFocus={() => this.showDatePicker('roundStart')}
+                    onChange={e => this.setState({ newRoundStart: e.target.value })}
+                    onKeyDown={this.handleSubmit}
+                  />
+                </Col>
+              </Row>
+            </Col>
+            <Col md={{ size: 12 }} className='form-group'>
+              <Row>
+                <Col className='myLabel'>
+                  <label>End</label>
+                  <div style={{ color: 'red', marginLeft: '5px' }}>*</div>
+                </Col>
+                <Col>
+                  <Input
+                    readOnly
+                    value={this.state.newRoundEnd.toLocaleString()}
+                    onFocus={() => this.showDatePicker('roundEnd')}
+                    onChange={e => this.setState({ newRoundEnd: e.target.value })}
+                    onKeyDown={this.handleSubmit}
+                  />
+                </Col>
+              </Row>
             </Col>
           </Row>
           <MuiThemeProvider muiTheme={lightMuiTheme}>
@@ -510,7 +598,8 @@ class App extends Component {
   }
 
   renderPreviousRounds() {
-    if (this.state.previousRounds.length > 0) {
+    const { myAddress, owner, divider, previousRounds } = this.state;
+    if ( owner.length > 0 && myAddress === owner && previousRounds.length > 0) {
       return (
         <div>
           <Row>
@@ -519,7 +608,7 @@ class App extends Component {
               <hr className='my-2'/>
             </Col>
           </Row>
-          {this.state.previousRounds.map((round, index) => {
+          {previousRounds.map((round, index) => {
             return (
               <div key={index}>
                 <Row>
@@ -528,16 +617,20 @@ class App extends Component {
                   </Col>
                 </Row>
                 <Row>
-                  <Col md={{ size: 7 }}><label>Start</label></Col>
-                  <Col md={{ size: 5 }}>{new Date(round[1] * 1000).toLocaleString()}</Col>
+                  <Col style={{ marginLeft: 10 }}><label>Start</label></Col>
+                  <Col style={{ textAlign: 'end' }}>{moment.unix(round[1]).format(timeFormat)}</Col>
                 </Row>
                 <Row>
-                  <Col md={{ size: 7 }}><label>Rate</label></Col>
-                  <Col md={{ size: 5 }}>{round[2].toNumber()}$</Col>
+                  <Col style={{ marginLeft: 10 }}><label>End</label></Col>
+                  <Col style={{ textAlign: 'end' }}>{moment.unix(round[2]).format(timeFormat)}</Col>
                 </Row>
                 <Row>
-                  <Col md={{ size: 7 }}><label>Sold tokens</label></Col>
-                  <Col md={{ size: 5 }}>{(917431100 - round[3].toNumber()) / this.state.divider}</Col>
+                  <Col style={{ marginLeft: 10 }}><label>Rate</label></Col>
+                  <Col style={{ textAlign: 'end' }}>{round[3].toNumber() / divider}$</Col>
+                </Row>
+                <Row>
+                  <Col style={{ marginLeft: 10 }}><label>Sold tokens</label></Col>
+                  <Col style={{ textAlign: 'end' }}>{(917431100 - round[4].toNumber()) / divider}</Col>
                 </Row>
               </div>
             )
@@ -633,14 +726,8 @@ class App extends Component {
                     <Col md={{ size: 8 }} style={{ textAlign: 'end', fontWeight: 'bolder' }}>{this.state.status}</Col>
                   </Row>
                   <Row>
-                    <Col md={{ size: 8 }}><label>Remaining tokens in the current round</label></Col>
+                    <Col md={{ size: 8 }}><label>Remaining tokens</label></Col>
                     <Col md={{ size: 4 }} style={{ textAlign: 'end', fontWeight: 'bolder' }}>{this.state.roundRemaining}</Col>
-                  </Row>
-                  <Row>
-                    <Col md={{ size: 8 }}><label>Sold tokens in the current round</label></Col>
-                    <Col md={{ size: 4 }} style={{ textAlign: 'end' }}>
-                      {(9174311 - this.state.roundRemaining) / this.state.divider}
-                    </Col>
                   </Row>
                 </Col>
               </Row>
@@ -755,20 +842,20 @@ class App extends Component {
                 </Col>
               </Row>
               <Row>
-                <Col md={{ size: 7 }}><label>Name</label></Col>
-                <Col md={{ size: 5 }}>{this.state.tokenName}</Col>
+                <Col><label>Name</label></Col>
+                <Col style={{ textAlign: 'end' }}>{this.state.tokenName}</Col>
               </Row>
               <Row>
-                <Col md={{ size: 7 }}><label>Symbol</label></Col>
-                <Col md={{ size: 5 }}>{this.state.tokenSymbol}</Col>
+                <Col><label>Symbol</label></Col>
+                <Col style={{ textAlign: 'end' }}>{this.state.tokenSymbol}</Col>
               </Row>
               <Row>
-                <Col md={{ size: 7 }}><label>Decimals</label></Col>
-                <Col md={{ size: 5 }}>{this.state.decimals}</Col>
+                <Col><label>Decimals</label></Col>
+                <Col style={{ textAlign: 'end' }}>{this.state.decimals}</Col>
               </Row>
               <Row>
-                <Col md={{ size: 7 }}><label>Initial supply</label></Col>
-                <Col md={{ size: 5 }}>{this.state.initialSupply}</Col>
+                <Col><label>Initial supply</label></Col>
+                <Col style={{ textAlign: 'end' }}>{this.state.initialSupply}</Col>
               </Row>
               <Row>
                 <Col>
@@ -777,16 +864,12 @@ class App extends Component {
                 </Col>
               </Row>
               <Row>
-                <Col md={{ size: 7 }}><label>Beginning of pre-ICO</label></Col>
-                <Col md={{ size: 5 }}>{new Date(this.state.startPreICO * 1000).toLocaleString()}</Col>
+                <Col className='myLabel'><label>Beginning of pre-ICO</label></Col>
+                <Col style={{ textAlign: 'end' }}>{this.state.startPreICO.format(timeFormat)}</Col>
               </Row>
               <Row>
-                <Col md={{ size: 7 }}><label>Beginning of ICO</label></Col>
-                <Col md={{ size: 5 }}>{new Date(this.state.startICO * 1000).toLocaleString()}</Col>
-              </Row>
-              <Row>
-                <Col md={{ size: 7 }}><label>End of ICO</label></Col>
-                <Col md={{ size: 5 }}>{new Date(this.state.endICO * 1000).toLocaleString()}</Col>
+                <Col className='myLabel'><label>Beginning of ICO</label></Col>
+                <Col style={{ textAlign: 'end' }}>{this.state.startICO.format(timeFormat)}</Col>
               </Row>
               <Row>
                 <Col>
@@ -795,12 +878,20 @@ class App extends Component {
                 </Col>
               </Row>
               <Row>
-                <Col md={{ size: 7 }}><label>Current round</label></Col>
-                <Col md={{ size: 5 }}>{this.state.roundNumber}</Col>
+                <Col className='myLabel'><label>Current round</label></Col>
+                <Col style={{ textAlign: 'end' }}>{this.state.roundNumber}</Col>
               </Row>
               <Row>
-                <Col md={{ size: 7 }}><label>Beginning of the round</label></Col>
-                <Col md={{ size: 5 }}>{this.state.roundStart}</Col>
+                <Col className='myLabel'><label>Beginning of the round</label></Col>
+                <Col style={{ textAlign: 'end' }}>{this.state.roundStart.format(timeFormat)}</Col>
+              </Row>
+              <Row>
+                <Col className='myLabel'><label>End of the round</label></Col>
+                <Col style={{ textAlign: 'end' }}>{this.state.roundEnd.format(timeFormat)}</Col>
+              </Row>
+              <Row>
+                <Col className='myLabel'><label>Sold tokens</label></Col>
+                <Col style={{ textAlign: 'end' }}>{9174311 - this.state.roundRemaining}</Col>
               </Row>
               {this.renderStartNewRound()}
               {this.renderPreviousRounds()}

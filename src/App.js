@@ -200,7 +200,13 @@ class App extends Component {
     const previousRounds = [];
     for (let i = 0; i < roundNumber - 1; i++) {
        const round = await instanceCrowdsale.rounds.call(i);
-       previousRounds.push(round);
+       previousRounds.push({
+         number: round[0].toNumber(),
+         start: moment.unix(round[1]).format(timeFormat),
+         end: moment.unix(round[2]).format(timeFormat),
+         rate: `${round[3].toNumber() / divider}$`,
+         sold: Math.round((9174311 - round[4].toNumber() / divider) * 100) / 100
+       });
     }
 
     // Check the possibility of distributing tokens after the completion of the ICO
@@ -253,8 +259,12 @@ class App extends Component {
       status = 'Pre-ICO in progress';
     } else if (roundNumber < numberRounds) {
       status = 'ICO in progress';
-    } else if (roundNumber === numberRounds && moment() > roundEnd) {
-      status = refund ? 'ICO completed!' : 'ICO has failed!';
+    } else if (roundNumber === numberRounds) {
+      if (moment() > roundEnd) {
+        status = refund ? 'ICO completed!' : 'ICO has failed!';
+      } else {
+        status = 'Waiting for the next round';
+      }
     } else {
       status = 'Unknown';
     }
@@ -597,49 +607,6 @@ class App extends Component {
     }
   }
 
-  renderPreviousRounds() {
-    const { myAddress, owner, divider, previousRounds } = this.state;
-    if ( owner.length > 0 && myAddress === owner && previousRounds.length > 0) {
-      return (
-        <div>
-          <Row>
-            <Col>
-              <h5>Previous rounds</h5>
-              <hr className='my-2'/>
-            </Col>
-          </Row>
-          {previousRounds.map((round, index) => {
-            return (
-              <div key={index}>
-                <Row>
-                  <Col>
-                    <label><strong>Round №{round[0].toNumber()}</strong></label>
-                  </Col>
-                </Row>
-                <Row>
-                  <Col style={{ marginLeft: 10 }}><label>Start</label></Col>
-                  <Col style={{ textAlign: 'end' }}>{moment.unix(round[1]).format(timeFormat)}</Col>
-                </Row>
-                <Row>
-                  <Col style={{ marginLeft: 10 }}><label>End</label></Col>
-                  <Col style={{ textAlign: 'end' }}>{moment.unix(round[2]).format(timeFormat)}</Col>
-                </Row>
-                <Row>
-                  <Col style={{ marginLeft: 10 }}><label>Rate</label></Col>
-                  <Col style={{ textAlign: 'end' }}>{round[3].toNumber() / divider}$</Col>
-                </Row>
-                <Row>
-                  <Col style={{ marginLeft: 10 }}><label>Sold tokens</label></Col>
-                  <Col style={{ textAlign: 'end' }}>{(917431100 - round[4].toNumber()) / divider}</Col>
-                </Row>
-              </div>
-            )
-          })}
-        </div>
-      )
-    }
-  }
-
   renderTransferOwnership() {
     const { myAddress, owner } = this.state;
     if ( owner.length > 0 && myAddress === owner) {
@@ -817,6 +784,29 @@ class App extends Component {
                   </Row>
                   <Row>
                     <Col>
+                      <h4>Previous rounds</h4>
+                      <hr className='my-2'/>
+                    </Col>
+                  </Row>
+                  <Row>
+                    <Col>
+                      <BootstrapTable data={this.state.previousRounds} version='4' striped={true} hover={true}>
+                        <TableHeaderColumn dataField='number' isKey={true}>Number</TableHeaderColumn>
+                        <TableHeaderColumn dataField='start'>Start</TableHeaderColumn>
+                        <TableHeaderColumn dataField='end'>End</TableHeaderColumn>
+                        <TableHeaderColumn dataField='rate'>Rate</TableHeaderColumn>
+                        <TableHeaderColumn dataField='sold'>Sold</TableHeaderColumn>
+                      </BootstrapTable>
+                    </Col>
+                  </Row>
+                  <Row>
+                    <Col>
+                      <h4>Investors</h4>
+                      <hr className='my-2'/>
+                    </Col>
+                  </Row>
+                  <Row>
+                    <Col>
                       <BootstrapTable data={this.state.investorsTokens} version='4' striped={true} hover={true}>
                         <TableHeaderColumn dataField='address' isKey={true}>Investor's address</TableHeaderColumn>
                         <TableHeaderColumn dataField='tokens'>Tokens</TableHeaderColumn>
@@ -891,10 +881,9 @@ class App extends Component {
               </Row>
               <Row>
                 <Col className='myLabel'><label>Sold tokens</label></Col>
-                <Col style={{ textAlign: 'end' }}>{9174311 - this.state.roundRemaining}</Col>
+                <Col style={{ textAlign: 'end' }}>{Math.round((9174311 - this.state.roundRemaining) * 100) / 100}</Col>
               </Row>
               {this.renderStartNewRound()}
-              {this.renderPreviousRounds()}
               <Row>
                 <Col>
                   <h5>Contract info</h5>

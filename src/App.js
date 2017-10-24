@@ -37,6 +37,7 @@ class App extends Component {
       myAddress: '',
       tokenAddress: '',
       crowdsaleAddress: '',
+      oraclize: '',
 
       // Information on sale
       usdRate: 0,
@@ -254,7 +255,7 @@ class App extends Component {
     this.checkStatus();
   }
 
-  checkStatus() { // TODO !!!
+  checkStatus() {
     const { startPreICO, startICO, refund, roundNumber, roundStart, roundEnd, numberRounds } = this.state;
 
     let status = 'Unknown';

@@ -20,8 +20,8 @@ contract OraclizeWrapper is usingOraclize {
     return bytes32(r);
   }
 
-  function update() payable {
-    oraclize_query('URL', 'json(https://api.kraken.com/0/public/Ticker?pair=ETHUSD).result.XETHZUSD.c.0'); // every 6 hours = 21600
+  function update(uint _timeout) payable {
+    oraclize_query(_timeout, 'URL', 'json(https://api.kraken.com/0/public/Ticker?pair=ETHUSD).result.XETHZUSD.c.0');
   }
 
   function __callback(bytes32 myid, string result) {

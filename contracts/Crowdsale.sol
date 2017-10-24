@@ -323,8 +323,12 @@ contract Crowdsale is Ownable {
   }
 
   function updateEthRate() public payable {
-    if (msg.value > 0) oraclize.transfer(msg.value);
-    oraclize.update();
+    if (msg.value > 0) {
+      oraclize.transfer(msg.value);
+      oraclize.update(0);
+    } else {
+      oraclize.update(21600); // every 6 hours = 21600
+    }
   }
 
   function getTokens() public constant returns (uint) {

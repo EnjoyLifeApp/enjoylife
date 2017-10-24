@@ -20,6 +20,7 @@ contract Crowdsale is Ownable {
     uint end;
     uint rate;
     uint remaining;
+    uint sold;
     uint reserveBounty;
     uint reserveTeam;
   }
@@ -72,12 +73,13 @@ contract Crowdsale is Ownable {
       end: _endFirstRound,
       rate: _rate,
       remaining: maximumSoldTokens,
+      sold: 0,
       reserveBounty: 0,
       reserveTeam: 0
     });
   }
 
-  function bytesToUInt(bytes32 v) constant returns (uint ret) {
+  function bytesToUInt(bytes32 v) internal constant returns (uint ret) {
     if (v == 0x0) {
       revert();
     }
@@ -130,6 +132,7 @@ contract Crowdsale is Ownable {
       }
       tokensCountPreICO = tokensCountPreICO.add(tokensWithBonus);
       currentRound.remaining = currentRound.remaining.sub(tokensWithBonus);
+      currentRound.sold = currentRound.sold.add(tokensWithBonus);
       getBalanceContract = getBalanceContract.add(totalValue);
       calculationNumberInvestors(msg.sender, tokensWithBonus);
       token.transfer(msg.sender, tokensWithBonus);
@@ -214,6 +217,7 @@ contract Crowdsale is Ownable {
 
       tokensCountICO = tokensCountICO.add(tokensWithBonus);
       currentRound.remaining = currentRound.remaining.sub(tokensWithBonus);
+      currentRound.sold = currentRound.sold.add(tokensWithBonus);
       balancesICO[msg.sender] = balancesICO[msg.sender].add(totalValue);
       getBalanceContract = getBalanceContract.add(totalValue);
       calculationNumberInvestors(msg.sender, tokensWithBonus);
@@ -231,6 +235,7 @@ contract Crowdsale is Ownable {
       tokensCountICO = tokensCountICO.add(_tokens);
     }
     currentRound.remaining = currentRound.remaining.sub(_tokens);
+    currentRound.sold = currentRound.sold.add(_tokens);
     calculationNumberInvestors(_addr, _tokens);
     token.transfer(_addr, _tokens);
   }
@@ -279,17 +284,17 @@ contract Crowdsale is Ownable {
       currentRound.number < numberRounds
     );
 
+    // Reservation of tokens
+    currentRound.reserveBounty = currentRound.sold.div(50).add(currentRound.reserveBounty);     // 2% of sold tokens
+    currentRound.reserveTeam = currentRound.sold.mul(7).div(100).add(currentRound.reserveTeam); // 7% of sold tokens
+
     rounds.push(currentRound);
     currentRound.number = currentRound.number.add(1);
     currentRound.start = _start;
     currentRound.end = _end;
     currentRound.rate = _rate;
     currentRound.remaining = maximumSoldTokens;
-
-    // Reservation of tokens
-    uint soldTokens = maximumSoldTokens.sub(currentRound.remaining);
-    currentRound.reserveBounty = soldTokens.div(50).add(currentRound.reserveBounty);     // 2% of sold tokens
-    currentRound.reserveTeam = soldTokens.mul(7).div(100).add(currentRound.reserveTeam); // 7% of sold tokens
+    currentRound.sold = 0;
   }
 
   function refund() {
@@ -315,6 +320,11 @@ contract Crowdsale is Ownable {
     token.transfer(bountyAccount, soldTokens.div(50).add(currentRound.reserveBounty));            // 2% of sold tokens + previous rounds
     token.transfer(projectTeamAccount, soldTokens.mul(7).div(100).add(currentRound.reserveTeam)); // 7% of sold tokens + previous rounds
     token.burn(token.balanceOf(this));
+  }
+
+  function updateEthRate() payable {
+    if (msg.value > 0) oraclize.transfer(msg.value);
+    oraclize.update();
   }
 
   function getTokens() public constant returns (uint) {

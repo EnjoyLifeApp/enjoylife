@@ -33,4 +33,6 @@ contract OraclizeWrapper is usingOraclize {
   function getRate() public constant returns(bytes32) {
     return s2b(responceOraclize);
   }
+
+  function() payable {}
 }

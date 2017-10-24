@@ -129,8 +129,8 @@ class App extends Component {
         crowdsaleAddress: crowdsale.address,
         startPreICO: moment.unix(startPreICO),
         startICO: moment.unix(startICO),
-        minInvestmentPreICO: minInvestmentPreICO.toNumber() / divider,
-        minInvestmentICO: minInvestmentICO.toNumber() / divider,
+        minInvestmentPreICO: minInvestmentPreICO.toNumber() / 100,
+        minInvestmentICO: minInvestmentICO.toNumber() / 100,
         minCapICO: minCapICO,
         burnTime: burnTime.toNumber()
       });
@@ -148,7 +148,7 @@ class App extends Component {
     const [
       myTokens, tokensCountPreICO, tokensCountICO,
       numInvestors, currentRound, myInvestments,
-      owner, usdRate, notSoldTokens
+      owner, usdRate, unSoldTokens
     ] = await Promise.all([
       instanceToken.balanceOf(web3.eth.accounts[0]), instanceCrowdsale.tokensCountPreICO.call(),
       instanceCrowdsale.tokensCountICO.call(), instanceCrowdsale.getAllInvestors.call(),
@@ -202,10 +202,10 @@ class App extends Component {
        const round = await instanceCrowdsale.rounds.call(i);
        previousRounds.push({
          number: round[0].toNumber(),
-         start: moment.unix(round[1]).format(timeFormat),
-         end: moment.unix(round[2]).format(timeFormat),
-         rate: `${round[3].toNumber() / divider}$`,
-         sold: Math.round((9174311 - round[4].toNumber() / divider) * 100) / 100
+         start: moment.unix(round[1]).format('D.MM.YYYY, HH:mm'),
+         end: moment.unix(round[2]).format('D.MM.YYYY, HH:mm'),
+         rate: `${round[3].toNumber() / 100}$`,
+         sold: round[5].toNumber() / divider
        });
     }
 
@@ -218,10 +218,10 @@ class App extends Component {
 
     this.setState({
       owner: owner,
-      usdRate: usdRate.toNumber() / divider,
+      usdRate: usdRate.toNumber() / 100,
 
       // Statistics
-      notSoldTokens: notSoldTokens.toNumber() / divider,
+      unSoldTokens: unSoldTokens.toNumber() / divider,
       tokensCountPreICO: tokensCountPreICO.toNumber() / divider,
       tokensCountICO: tokensCountICO.toNumber() / divider,
       numInvestors: numInvestors.toNumber(),
@@ -242,31 +242,35 @@ class App extends Component {
       roundNumber: roundNumber,
       roundStart: moment.unix(currentRound[1]),
       roundEnd: moment.unix(currentRound[2]),
-      roundRate: currentRound[3].toNumber() / divider,
+      roundRate: currentRound[3].toNumber() / 100,
       roundRemaining: currentRound[4].toNumber() / divider,
+      roundSold: currentRound[5].toNumber() / divider,
       previousRounds: previousRounds
     });
 
     this.checkStatus();
   }
 
-  checkStatus() {
-    const { startPreICO, startICO, refund, roundNumber, roundEnd, numberRounds } = this.state;
-    let status = '';
+  checkStatus() { // TODO !!!
+    const { startPreICO, startICO, refund, roundNumber, roundStart, roundEnd, numberRounds } = this.state;
+
+    let status = 'Unknown';
     if (moment() < startPreICO) {
       status = 'Waiting for pre-ICO to start';
     } else if (moment() < startICO) {
       status = 'Pre-ICO in progress';
-    } else if (roundNumber < numberRounds) {
-      status = 'ICO in progress';
-    } else if (roundNumber === numberRounds) {
-      if (moment() > roundEnd) {
-        status = refund ? 'ICO completed!' : 'ICO has failed!';
-      } else {
-        status = 'Waiting for the next round';
-      }
     } else {
-      status = 'Unknown';
+      if (moment() < roundStart) {
+        status = 'Waiting for the next round';
+      } else if (moment() > roundStart && moment() < roundEnd) {
+        status = 'ICO in progress';
+      } else {
+        if (roundNumber === numberRounds) {
+          status = refund ? 'ICO completed!' : 'ICO has failed!';
+        } else if (roundNumber < numberRounds) {
+          status = 'Round is over';
+        }
+      }
     }
     this.setState({ status: status });
   }
@@ -330,7 +334,7 @@ class App extends Component {
     const { web3, instanceCrowdsale, newTokenRate, newRoundStart, newRoundEnd } = this.state;
     await instanceCrowdsale.startingNewRound(
       newRoundStart.getTime() / 1000, newRoundEnd.getTime() / 1000,
-      newTokenRate * 100, { from: web3.eth.accounts[0], gas: 200000 }
+      newTokenRate * 100, { from: web3.eth.accounts[0], gas: 300000 }
     );
 
     this.updateState();
@@ -387,6 +391,13 @@ class App extends Component {
 
     console.log('distribute');
     this.updateState();
+  }
+
+  updateEthRate() {
+    const { web3, instanceCrowdsale } = this.state;
+    instanceCrowdsale.updateEthRate({ from: web3.eth.accounts[0], value: web3.toWei(0.0041065, 'ether') })
+
+    console.log('eth/usd');
   }
 
   clearTimestamp() {
@@ -660,10 +671,6 @@ class App extends Component {
                       />
                     </Col>
                   </Row>
-                  <Row>
-                    <Col md={{ size: 9 }}><label>Tokens bought by me</label></Col>
-                    <Col md={{ size: 3 }} style={{ textAlign: 'end' }}>{this.state.myTokens}</Col>
-                  </Row>
                 </Col>
                 <Col>
                   <Row>
@@ -688,13 +695,41 @@ class App extends Component {
                     <Col md={{ size: 8 }}><label>Minimum investment for ICO</label></Col>
                     <Col md={{ size: 4 }} style={{ textAlign: 'end' }}>{this.state.minInvestmentICO}$</Col>
                   </Row>
+                </Col>
+              </Row>
+              <Row className='form-group'>
+                <Col>
                   <Row>
-                    <Col md={{ size: 4 }}><label>Status</label></Col>
+                    <Col md={{ size: 4 }}><label>Status ICO</label></Col>
                     <Col md={{ size: 8 }} style={{ textAlign: 'end', fontWeight: 'bolder' }}>{this.state.status}</Col>
                   </Row>
                   <Row>
                     <Col md={{ size: 8 }}><label>Remaining tokens</label></Col>
                     <Col md={{ size: 4 }} style={{ textAlign: 'end', fontWeight: 'bolder' }}>{this.state.roundRemaining}</Col>
+                  </Row>
+                  <Row>
+                    <Col md={{ size: 9 }}><label>Tokens bought by me</label></Col>
+                    <Col md={{ size: 3 }} style={{ textAlign: 'end' }}>{this.state.myTokens}</Col>
+                  </Row>
+                </Col>
+                <Col>
+                  <Row>
+                    <Col>
+                      <label><strong>Update ETH/USD rate</strong></label>
+                    </Col>
+                  </Row>
+                  <Row>
+                    <Col md={{ size: 4 }}>
+                      <MuiThemeProvider muiTheme={lightMuiTheme}>
+                        <RaisedButton
+                          label='Oraclize'
+                          primary={true}
+                          onClick={() => this.updateEthRate()}
+                          style={{ width: 120 }}
+                        />
+                      </MuiThemeProvider>
+                    </Col>
+                    <Col md={{ size: 8 }} style={{ fontStyle: 'italic', textAlign: 'center' }}>* for each course request 0.0041065 eth</Col>
                   </Row>
                 </Col>
               </Row>
@@ -766,19 +801,19 @@ class App extends Component {
                     <Col>
                       <Row>
                         <Col><label>Number of unsold tokens</label></Col>
-                        <Col style={{ textAlign: 'end' }}>{this.state.notSoldTokens}</Col>
+                        <Col className='displayValue'>{this.state.unSoldTokens}</Col>
                       </Row>
                       <Row>
                         <Col><label>Number of tokens sold at pre-ICO</label></Col>
-                        <Col style={{ textAlign: 'end' }}>{this.state.tokensCountPreICO}</Col>
+                        <Col className='displayValue'>{this.state.tokensCountPreICO}</Col>
                       </Row>
                       <Row>
                         <Col><label>Number of tokens sold at ICO</label></Col>
-                        <Col style={{ textAlign: 'end' }}>{this.state.tokensCountICO}</Col>
+                        <Col className='displayValue'>{this.state.tokensCountICO}</Col>
                       </Row>
                       <Row>
                         <Col><label>Investors Count</label></Col>
-                        <Col style={{ textAlign: 'end' }}>{this.state.numInvestors}</Col>
+                        <Col className='displayValue'>{this.state.numInvestors}</Col>
                       </Row>
                     </Col>
                   </Row>
@@ -792,10 +827,10 @@ class App extends Component {
                     <Col>
                       <BootstrapTable data={this.state.previousRounds} version='4' striped={true} hover={true}>
                         <TableHeaderColumn dataField='number' isKey={true}>Number</TableHeaderColumn>
-                        <TableHeaderColumn dataField='start'>Start</TableHeaderColumn>
-                        <TableHeaderColumn dataField='end'>End</TableHeaderColumn>
                         <TableHeaderColumn dataField='rate'>Rate</TableHeaderColumn>
                         <TableHeaderColumn dataField='sold'>Sold</TableHeaderColumn>
+                        <TableHeaderColumn dataField='start'>Start</TableHeaderColumn>
+                        <TableHeaderColumn dataField='end'>End</TableHeaderColumn>
                       </BootstrapTable>
                     </Col>
                   </Row>
@@ -833,19 +868,19 @@ class App extends Component {
               </Row>
               <Row>
                 <Col><label>Name</label></Col>
-                <Col style={{ textAlign: 'end' }}>{this.state.tokenName}</Col>
+                <Col className='displayValue'>{this.state.tokenName}</Col>
               </Row>
               <Row>
                 <Col><label>Symbol</label></Col>
-                <Col style={{ textAlign: 'end' }}>{this.state.tokenSymbol}</Col>
+                <Col className='displayValue'>{this.state.tokenSymbol}</Col>
               </Row>
               <Row>
                 <Col><label>Decimals</label></Col>
-                <Col style={{ textAlign: 'end' }}>{this.state.decimals}</Col>
+                <Col className='displayValue'>{this.state.decimals}</Col>
               </Row>
               <Row>
                 <Col><label>Initial supply</label></Col>
-                <Col style={{ textAlign: 'end' }}>{this.state.initialSupply}</Col>
+                <Col className='displayValue'>{this.state.initialSupply}</Col>
               </Row>
               <Row>
                 <Col>
@@ -855,11 +890,11 @@ class App extends Component {
               </Row>
               <Row>
                 <Col className='myLabel'><label>Beginning of pre-ICO</label></Col>
-                <Col style={{ textAlign: 'end' }}>{this.state.startPreICO.format(timeFormat)}</Col>
+                <Col className='displayValue'>{this.state.startPreICO.format(timeFormat)}</Col>
               </Row>
               <Row>
                 <Col className='myLabel'><label>Beginning of ICO</label></Col>
-                <Col style={{ textAlign: 'end' }}>{this.state.startICO.format(timeFormat)}</Col>
+                <Col className='displayValue'>{this.state.startICO.format(timeFormat)}</Col>
               </Row>
               <Row>
                 <Col>
@@ -869,19 +904,19 @@ class App extends Component {
               </Row>
               <Row>
                 <Col className='myLabel'><label>Current round</label></Col>
-                <Col style={{ textAlign: 'end' }}>{this.state.roundNumber}</Col>
+                <Col className='displayValue'>{this.state.roundNumber}</Col>
               </Row>
               <Row>
                 <Col className='myLabel'><label>Beginning of the round</label></Col>
-                <Col style={{ textAlign: 'end' }}>{this.state.roundStart.format(timeFormat)}</Col>
+                <Col className='displayValue'>{this.state.roundStart.format(timeFormat)}</Col>
               </Row>
               <Row>
                 <Col className='myLabel'><label>End of the round</label></Col>
-                <Col style={{ textAlign: 'end' }}>{this.state.roundEnd.format(timeFormat)}</Col>
+                <Col className='displayValue'>{this.state.roundEnd.format(timeFormat)}</Col>
               </Row>
               <Row>
                 <Col className='myLabel'><label>Sold tokens</label></Col>
-                <Col style={{ textAlign: 'end' }}>{Math.round((9174311 - this.state.roundRemaining) * 100) / 100}</Col>
+                <Col className='displayValue'>{this.state.roundSold}</Col>
               </Row>
               {this.renderStartNewRound()}
               <Row>

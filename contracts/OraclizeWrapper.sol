@@ -21,7 +21,7 @@ contract OraclizeWrapper is usingOraclize {
   }
 
   function update() payable {
-    oraclize_query(21600, 'WolframAlpha', 'eth to cent'); // every 6 hours
+    oraclize_query('URL', 'json(https://api.kraken.com/0/public/Ticker?pair=ETHUSD).result.XETHZUSD.c.0'); // every 6 hours = 21600
   }
 
   function __callback(bytes32 myid, string result) {
@@ -34,5 +34,5 @@ contract OraclizeWrapper is usingOraclize {
     return s2b(responceOraclize);
   }
 
-  function() payable {}
+  function() public payable {}
 }

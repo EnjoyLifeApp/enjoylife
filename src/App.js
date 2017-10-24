@@ -69,6 +69,7 @@ class App extends Component {
       roundEnd: moment(0),
 
       // Other
+      oraclizeValue: 0,
       numberRounds: 1,
       myInvestments: 0,
       amount: '',
@@ -148,12 +149,13 @@ class App extends Component {
     const [
       myTokens, tokensCountPreICO, tokensCountICO,
       numInvestors, currentRound, myInvestments,
-      owner, usdRate, unSoldTokens
+      owner, usdRate, unSoldTokens, oraclize
     ] = await Promise.all([
       instanceToken.balanceOf(web3.eth.accounts[0]), instanceCrowdsale.tokensCountPreICO.call(),
       instanceCrowdsale.tokensCountICO.call(), instanceCrowdsale.getAllInvestors.call(),
       instanceCrowdsale.currentRound.call(), instanceCrowdsale.balancesICO.call(web3.eth.accounts[0]),
-      instanceCrowdsale.owner.call(), instanceCrowdsale.currentRateUSD.call(), instanceCrowdsale.getTokens.call()
+      instanceCrowdsale.owner.call(), instanceCrowdsale.currentRateUSD.call(), instanceCrowdsale.getTokens.call(),
+      instanceCrowdsale.oraclize.call()
     ]);
     const roundNumber = currentRound[0].toNumber();
 
@@ -218,6 +220,7 @@ class App extends Component {
 
     this.setState({
       owner: owner,
+      oraclize: oraclize,
       usdRate: usdRate.toNumber() / 100,
 
       // Statistics
@@ -373,7 +376,6 @@ class App extends Component {
     const { web3, instanceCrowdsale } = this.state;
     await instanceCrowdsale.refund({ from: web3.eth.accounts[0], gas: 100000 });
 
-    console.log('refund');
     this.updateState();
   }
 
@@ -381,7 +383,6 @@ class App extends Component {
     const { web3, instanceCrowdsale } = this.state;
     await instanceCrowdsale.burnTokens({ from: web3.eth.accounts[0], gas: 200000 });
 
-    console.log('burn');
     this.updateState();
   }
 
@@ -389,15 +390,12 @@ class App extends Component {
     const { web3, instanceCrowdsale } = this.state;
     await instanceCrowdsale.manualDistribute({ from: web3.eth.accounts[0], gas: 200000 });
 
-    console.log('distribute');
     this.updateState();
   }
 
   updateEthRate() {
-    const { web3, instanceCrowdsale } = this.state;
-    instanceCrowdsale.updateEthRate({ from: web3.eth.accounts[0], value: web3.toWei(0.0041065, 'ether') })
-
-    console.log('eth/usd');
+    const { web3, instanceCrowdsale, oraclizeValue } = this.state;
+    instanceCrowdsale.updateEthRate({ from: web3.eth.accounts[0], value: web3.toWei(oraclizeValue, 'ether'), gas: 200000 })
   }
 
   clearTimestamp() {
@@ -720,6 +718,15 @@ class App extends Component {
                   </Row>
                   <Row>
                     <Col md={{ size: 4 }}>
+                      <Input
+                        type='number'
+                        value={this.state.oraclizeValue}
+                        onChange={e => this.setState({ oraclizeValue: e.target.value })}
+                        placeholder='ETH'
+                        onKeyDown={this.handleSubmit}
+                      />
+                    </Col>
+                    <Col md={{ size: 4 }}>
                       <MuiThemeProvider muiTheme={lightMuiTheme}>
                         <RaisedButton
                           label='Oraclize'
@@ -729,7 +736,7 @@ class App extends Component {
                         />
                       </MuiThemeProvider>
                     </Col>
-                    <Col md={{ size: 8 }} style={{ fontStyle: 'italic', textAlign: 'center' }}>* for each course request 0.0041065 eth</Col>
+                    <Col md={{ size: 4 }} style={{ fontStyle: 'italic', textAlign: 'center' }}>* for each course request 0.0041065 eth</Col>
                   </Row>
                 </Col>
               </Row>
@@ -935,6 +942,12 @@ class App extends Component {
               <Row className='form-group'>
                 <Col>
                   <Input disabled={true} value={this.state.owner} />
+                </Col>
+              </Row>
+              <Row><Col><label>Oraclize</label></Col></Row>
+              <Row className='form-group'>
+                <Col>
+                  <Input disabled={true} value={this.state.oraclize} />
                 </Col>
               </Row>
               {this.renderTransferOwnership()}

@@ -49,7 +49,7 @@ contract Crowdsale is Ownable {
   uint constant maximumSoldTokens = 917431100;
 
   uint public constant minCapICO = 16E7;   // 1 600 000 tokens
-  uint public constant maxCapPreICO = 1E8; // 1 000 000 tokens
+  uint constant maxCapPreICO = 1E8; // 1 000 000 tokens
 
   uint public tokensCountPreICO;
   uint public tokensCountICO;
@@ -87,9 +87,9 @@ contract Crowdsale is Ownable {
     uint digit;
     for (uint i = 0; i < 32; i++) {
       digit = uint((uint(v) / (2 ** (8 * (31 - i)))) & 0xff);
-      if (digit == 0) {
+      if (digit == 0 || digit == 46) { // 0x0 or .
         break;
-      } else if (digit < 48 || digit > 57) {
+      } else if (digit < 48 || digit > 57) { // 0 to 9
         revert();
       }
       ret *= 10;
@@ -99,7 +99,7 @@ contract Crowdsale is Ownable {
   }
 
   function currentRateUSD() public constant returns (uint) {
-    return bytesToUInt(oraclize.getRate());
+    return bytesToUInt(oraclize.getRate()) * 100;
   }
 
   function calculationNumberInvestors(address _addr, uint _tokens) internal {
@@ -322,7 +322,7 @@ contract Crowdsale is Ownable {
     token.burn(token.balanceOf(this));
   }
 
-  function updateEthRate() payable {
+  function updateEthRate() public payable {
     if (msg.value > 0) oraclize.transfer(msg.value);
     oraclize.update();
   }
@@ -339,7 +339,7 @@ contract Crowdsale is Ownable {
     return investors.length;
   }
 
-  function() payable {
+  function() public payable {
     if (startPreICO < now && now < startICO) {
       createPreIcoTokens();
     } else if (currentRound.start < now && now < currentRound.end) {

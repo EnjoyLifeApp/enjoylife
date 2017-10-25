@@ -40,6 +40,7 @@ contract Crowdsale is Ownable {
   uint public burnTime;
 
   uint public startPreICO;
+  uint public endPreICO;
   uint public startICO;
 
   uint public constant minInvestmentPreICO = 20000; // 200 USD
@@ -58,12 +59,14 @@ contract Crowdsale is Ownable {
 
   // Parametrs:
   // - beginning of pre-ICO (01.11.2017 12:00 UTC+2 --> 1509530400)
+  // - end of pre-ICO (15.11.2017 24:00 UTC+2 -> 1510783200)
   // - beginning of ICO (01.12.2017 12:00 UTC+2 --> 1512122400)
   // - end first round of ICO (15.01.2018 00:00 UTC+2 --> 1515967200)
   // - token rate (cents)
   // - number of days from the end of the ISO and to the burning of the tokens
-  function Crowdsale(uint _startPreICO, uint _startICO, uint _endFirstRound, uint _rate, uint _burnTime) {
+  function Crowdsale(uint _startPreICO, uint _endPreICO, uint _startICO, uint _endFirstRound, uint _rate, uint _burnTime) {
     startPreICO = _startPreICO;
+    endPreICO = _endPreICO;
     startICO = _startICO;
     burnTime = _burnTime;
 
@@ -238,11 +241,13 @@ contract Crowdsale is Ownable {
 
   function sendToAddress(address _address, uint _tokens, uint _time) onlyOwner {
     uint time = _time > 0 ? _time : now;
-    require(startPreICO < time && time < currentRound.end);
+    bool preICO = startPreICO < time && time < endPreICO;
+    bool ICO = startICO < time && currentRound.start < time && time < currentRound.end;
+    require(preICO || ICO);
 
     uint tokensWithBonus;
     uint remainderTokens;
-    if (time < startICO) {
+    if (preICO) {
       tokensWithBonus = _tokens.add(_tokens >> 1);
       remainderTokens = maxCapPreICO.sub(tokensCountPreICO);
     } else {
@@ -264,7 +269,7 @@ contract Crowdsale is Ownable {
     );
 
     uint tempTokens = _tokens.add(_bonus);
-    uint remainderTokens = (now < startICO ? maxCapPreICO.sub(tokensCountPreICO) : currentRound.remaining);
+    uint remainderTokens = (now < endPreICO ? maxCapPreICO.sub(tokensCountPreICO) : currentRound.remaining);
     uint totalTokens = tempTokens > remainderTokens ? remainderTokens : tempTokens;
 
     assert(totalTokens > 0);
@@ -336,9 +341,9 @@ contract Crowdsale is Ownable {
   }
 
   function() public payable {
-    if (startPreICO < now && now < startICO) {
+    if (startPreICO < now && now < endPreICO) {
       createPreIcoTokens();
-    } else if (currentRound.start < now && now < currentRound.end) {
+    } else if (startICO < now && currentRound.start < now && now < currentRound.end) {
       createIcoTokens();
     } else {
       revert();

@@ -45,6 +45,7 @@ class App extends Component {
       minInvestmentPreICO: 0,
       minInvestmentICO: 0,
       startPreICO: moment(0),
+      endPreICO: moment(0),
       startICO: moment(0),
 
       // Manual send tokens
@@ -91,11 +92,11 @@ class App extends Component {
       const instance = await crowdsale.deployed();
       const [
         tokenAddress, startPreICO, startICO,
-        minInvestmentPreICO, minInvestmentICO,
+        endPreICO, minInvestmentPreICO, minInvestmentICO,
         minCapICO, burnTime, numberRounds
       ] = await Promise.all([
         instance.token.call(), instance.startPreICO.call(), instance.startICO.call(),
-        instance.minInvestmentPreICO.call(), instance.minInvestmentICO.call(),
+        instance.endPreICO.call(), instance.minInvestmentPreICO.call(), instance.minInvestmentICO.call(),
         instance.minCapICO.call(), instance.burnTime.call(), instance.numberRounds.call()
       ]);
 
@@ -130,6 +131,7 @@ class App extends Component {
         numberRounds: numberRounds.toNumber(),
         crowdsaleAddress: crowdsale.address,
         startPreICO: moment.unix(startPreICO),
+        endPreICO: moment.unix(endPreICO),
         startICO: moment.unix(startICO),
         minInvestmentPreICO: minInvestmentPreICO.toNumber() / 100,
         minInvestmentICO: minInvestmentICO.toNumber() / 100,
@@ -256,13 +258,15 @@ class App extends Component {
   }
 
   checkStatus() {
-    const { startPreICO, startICO, refund, roundNumber, roundStart, roundEnd, numberRounds } = this.state;
+    const { startPreICO, endPreICO, startICO, refund, roundNumber, roundStart, roundEnd, numberRounds } = this.state;
 
     let status = 'Unknown';
     if (moment() < startPreICO) {
       status = 'Waiting for pre-ICO to start';
-    } else if (moment() < startICO) {
+    } else if (moment() < endPreICO) {
       status = 'Pre-ICO in progress';
+    } else if (moment() < startICO) {
+      status = 'Waiting for ICO to start';
     } else {
       if (moment() < roundStart) {
         status = 'Waiting for the next round';
@@ -899,6 +903,10 @@ class App extends Component {
               <Row>
                 <Col className='myLabel'><label>Beginning of pre-ICO</label></Col>
                 <Col className='displayValue'>{this.state.startPreICO.format(timeFormat)}</Col>
+              </Row>
+              <Row>
+                <Col className='myLabel'><label>End of pre-ICO</label></Col>
+                <Col className='displayValue'>{this.state.endPreICO.format(timeFormat)}</Col>
               </Row>
               <Row>
                 <Col className='myLabel'><label>Beginning of ICO</label></Col>

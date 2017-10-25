@@ -193,6 +193,18 @@ contract Crowdsale is Ownable {
     }
   }
 
+  function countingTokens(address _addr, uint _tokens, uint _time) internal {
+    if (_time < startICO) {
+      tokensCountPreICO = tokensCountPreICO.add(_tokens);
+    } else {
+      tokensCountICO = tokensCountICO.add(_tokens);
+    }
+    currentRound.remaining = currentRound.remaining.sub(_tokens);
+    currentRound.sold = currentRound.sold.add(_tokens);
+    calculationNumberInvestors(_addr, _tokens);
+    token.transfer(_addr, _tokens);
+  }
+
   function createIcoTokens() internal {
     uint valueUSD = msg.value.mul(currentRateUSD()).div(1 ether);
     if (valueUSD >= minInvestmentICO && currentRound.remaining > 0) {
@@ -215,29 +227,13 @@ contract Crowdsale is Ownable {
         tokensWithBonus = currentRound.remaining;
       }
 
-      tokensCountICO = tokensCountICO.add(tokensWithBonus);
-      currentRound.remaining = currentRound.remaining.sub(tokensWithBonus);
-      currentRound.sold = currentRound.sold.add(tokensWithBonus);
       balancesICO[msg.sender] = balancesICO[msg.sender].add(totalValue);
       getBalanceContract = getBalanceContract.add(totalValue);
-      calculationNumberInvestors(msg.sender, tokensWithBonus);
-      token.transfer(msg.sender, tokensWithBonus);
+      countingTokens(msg.sender, tokensWithBonus, now);
       ethDistribution();
     } else {
       revert();
     }
-  }
-
-  function countingTokens(address _addr, uint _tokens, uint _time) internal {
-    if (_time < startICO) {
-      tokensCountPreICO = tokensCountPreICO.add(_tokens);
-    } else {
-      tokensCountICO = tokensCountICO.add(_tokens);
-    }
-    currentRound.remaining = currentRound.remaining.sub(_tokens);
-    currentRound.sold = currentRound.sold.add(_tokens);
-    calculationNumberInvestors(_addr, _tokens);
-    token.transfer(_addr, _tokens);
   }
 
   function sendToAddress(address _address, uint _tokens, uint _time) onlyOwner {
@@ -323,12 +319,8 @@ contract Crowdsale is Ownable {
   }
 
   function updateEthRate() public payable {
-    if (msg.value > 0) {
-      oraclize.transfer(msg.value);
-      oraclize.update(0);
-    } else {
-      oraclize.update(21600); // every 6 hours = 21600
-    }
+    if (msg.value > 0) oraclize.transfer(msg.value);
+    oraclize.update();
   }
 
   function getTokens() public constant returns (uint) {

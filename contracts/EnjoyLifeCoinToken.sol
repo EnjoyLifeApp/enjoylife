@@ -4,7 +4,7 @@ import './BurnableToken.sol';
 
 contract EnjoyLifeCoinToken is BurnableToken {
   string public constant name = 'Enjoy Life';
-  string public constant symbol = 'ENL';
+  string public constant symbol = 'ENJL';
   uint32 public constant decimals = 2;
   uint public constant initialSupply = 5E9; // 50 000 000
 
